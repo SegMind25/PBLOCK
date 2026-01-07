@@ -177,7 +177,7 @@ web-guardian/
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/yourusername/web-guardian.git
+git clone git@github.com:SegMind25/PBLOCK.git
 cd web-guardian
 ```
 
@@ -301,7 +301,7 @@ MIT License - See LICENSE file for details
 
 For issues, questions, or support:
 - Open an issue on GitHub
-- Email: support@webguardian.example
+- Email: modistotube2004@gmail.com
 
 ---
 
