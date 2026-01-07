@@ -1,0 +1,84 @@
+[package]
+name = "web-guardian-backend"
+version = "1.0.0"
+edition = "2021"
+authors = ["Web Guardian Team"]
+description = "Parental control backend service"
+
+[dependencies]
+# Web Framework
+actix-web = "4.5"
+actix-cors = "0.7"
+actix-rt = "2.9"
+
+# Async Runtime
+tokio = { version = "1.36", features = ["full"] }
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "migrate", "macros"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Authentication & Security
+jsonwebtoken = "9.2"
+argon2 = "0.5"
+rand = "0.8"
+sha2 = "0.10"
+hex = "0.4"
+
+# Cryptography
+aes-gcm = "0.10"
+base64 = "0.21"
+
+# Environment & Config
+dotenv = "0.15"
+config = "0.14"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Date/Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# System Operations
+sysinfo = "0.30"
+whoami = "1.4"
+
+# Error Handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Validation
+validator = { version = "0.18", features = ["derive"] }
+regex = "1.10"
+
+# HTTP Client (for updates/blocklists)
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+
+# UUID
+uuid = { version = "1.7", features = ["v4", "serde"] }
+
+# Network utilities
+trust-dns-resolver = "0.23"
+
+[dev-dependencies]
+actix-web-test = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[profile.dev]
+opt-level = 0
+
+[[bin]]
+name = "web-guardian"
+path = "src/main.rs"
