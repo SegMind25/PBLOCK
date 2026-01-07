@@ -305,4 +305,4 @@ For issues, questions, or support:
 
 ---
 
-**Ready to start? Tell me "continue" and I'll provide the next part of the code!**
+**USING VUE.JS & RUST :)**
