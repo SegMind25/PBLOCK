@@ -3,7 +3,7 @@ use argon2::{
     Argon2,
 };
 use aes_gcm::{
-    aead::{Aead, KeyInit, OsRng as AesOsRng},
+    aead::{Aead, AeadCore, KeyInit, OsRng as AesOsRng},
     Aes256Gcm, Nonce,
 };
 use base64::{engine::general_purpose, Engine as _};

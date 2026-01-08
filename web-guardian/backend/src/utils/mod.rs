@@ -1,8 +1,6 @@
 pub mod crypto;
 pub mod validator;
 
-use std::env;
-
 #[cfg(target_os = "windows")]
 pub fn check_admin_privileges() -> bool {
     use std::os::windows::process::CommandExt;

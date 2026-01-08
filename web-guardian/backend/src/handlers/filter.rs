@@ -1,11 +1,11 @@
-use actix_web::{delete, get, post, put, web, HttpRequest, HttpResponse};
+use actix_web::{delete, get, post, put, web, HttpRequest, HttpResponse, HttpMessage};
 use validator::Validate;
 
 use crate::database::{schema, DbPool};
 use crate::errors::AppError;
 use crate::middleware::Claims;
 use crate::models::{
-    AccessLogResponse, BlockedSiteResponse, CreateAccessLogRequest, CreateBlockedSiteRequest,
+    AccessLogResponse, BlockedSiteResponse, CreateBlockedSiteRequest,
 };
 use crate::services::HostFileManager;
 use crate::utils::validator::sanitize_domain;
@@ -58,14 +58,12 @@ pub async fn add_blocked_site(
 
     let domain = sanitize_domain(&site_data.domain);
 
-    // Check if domain already blocked
     if schema::is_domain_blocked(&pool, &domain).await? {
         return Err(AppError::AlreadyExistsError(
             "Domain already blocked".to_string(),
         ));
     }
 
-    // Create blocked site entry
     let site = schema::create_blocked_site(
         &pool,
         &domain,
@@ -75,7 +73,6 @@ pub async fn add_blocked_site(
     )
     .await?;
 
-    // Update hosts file
     host_manager.add_blocked_domains(&[domain.clone()])?;
 
     tracing::info!("✅ Domain {} blocked by user {}", domain, claims.username);
@@ -105,10 +102,8 @@ pub async fn delete_blocked_site(
     let site_id = path.into_inner();
     let site = schema::get_blocked_site_by_id(&pool, site_id).await?;
 
-    // Remove from hosts file
     host_manager.remove_blocked_domains(&[site.domain.clone()])?;
 
-    // Delete from database
     schema::delete_blocked_site(&pool, site_id).await?;
 
     tracing::info!(
@@ -131,7 +126,6 @@ pub async fn check_domain(
     let domain = sanitize_domain(&path.into_inner());
     let is_blocked = schema::is_domain_blocked(&pool, &domain).await?;
 
-    // Log the access attempt
     schema::create_access_log(&pool, &domain, is_blocked, None, None).await?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
@@ -209,11 +203,9 @@ pub async fn enable_filter(
         ));
     }
 
-    // Get all active blocked sites
     let sites = schema::get_all_blocked_sites(&pool).await?;
     let domains: Vec<String> = sites.into_iter().map(|s| s.domain).collect();
 
-    // Add to hosts file
     host_manager.add_blocked_domains(&domains)?;
 
     tracing::info!("✅ Filter enabled by user {}", claims.username);
@@ -226,7 +218,7 @@ pub async fn enable_filter(
 
 #[put("/disable")]
 pub async fn disable_filter(
-    pool: web::Data<DbPool>,
+    _pool: web::Data<DbPool>,
     host_manager: web::Data<HostFileManager>,
     req: HttpRequest,
 ) -> Result<HttpResponse, AppError> {
@@ -242,9 +234,6 @@ pub async fn disable_filter(
         ));
     }
 
-    // NOTE: In production, you might want to prevent disabling entirely
-    // or require additional authentication (like a recovery code)
-    
     let domains = host_manager.get_blocked_domains()?;
     host_manager.remove_blocked_domains(&domains)?;
 

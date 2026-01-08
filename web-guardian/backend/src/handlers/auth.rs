@@ -1,4 +1,4 @@
-use actix_web::{get, post, web, HttpRequest, HttpResponse};
+use actix_web::{get, post, web, HttpRequest, HttpResponse, HttpMessage};
 use validator::Validate;
 
 use crate::database::{schema, DbPool};
@@ -15,7 +15,6 @@ pub async fn register(
     user_data.validate()
         .map_err(|e| AppError::ValidationError(e.to_string()))?;
 
-    // Check if parent user already exists
     if user_data.is_parent {
         let has_parent = schema::has_parent_user(&pool).await?;
         if has_parent {
@@ -25,17 +24,14 @@ pub async fn register(
         }
     }
 
-    // Check if username already exists
     if schema::get_user_by_username(&pool, &user_data.username).await.is_ok() {
         return Err(AppError::AlreadyExistsError(
             "Username already exists".to_string(),
         ));
     }
 
-    // Hash password
     let password_hash = hash_password(&user_data.password)?;
 
-    // Create user
     let user = schema::create_user(
         &pool,
         &user_data.username,
@@ -45,10 +41,8 @@ pub async fn register(
     )
     .await?;
 
-    // If this is a parent user, activate the filter by default
     if user.is_parent {
         tracing::info!("✅ Parent user created, activating filter");
-        // TODO: Activate filter through service
     }
 
     Ok(HttpResponse::Created().json(UserResponse::from(user)))
@@ -62,10 +56,8 @@ pub async fn login(
     credentials.validate()
         .map_err(|e| AppError::ValidationError(e.to_string()))?;
 
-    // Get user by username
     let user = schema::get_user_by_username(&pool, &credentials.username).await?;
 
-    // Verify password
     let is_valid = verify_password(&credentials.password, &user.password_hash)?;
     if !is_valid {
         return Err(AppError::AuthenticationError(
@@ -73,10 +65,8 @@ pub async fn login(
         ));
     }
 
-    // Update last login
     schema::update_last_login(&pool, user.id).await?;
 
-    // Generate JWT token
     let claims = Claims::new(user.id, user.username.clone(), user.is_parent, 24);
     let token = claims.encode()
         .map_err(|e| AppError::InternalError(format!("Failed to generate token: {}", e)))?;

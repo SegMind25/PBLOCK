@@ -3,7 +3,6 @@ name = "web-guardian-backend"
 version = "1.0.0"
 edition = "2021"
 authors = ["Web Guardian Team"]
-description = "Parental control backend service"
 
 [dependencies]
 # Web Framework
@@ -13,10 +12,10 @@ actix-rt = "2.9"
 
 # Async Runtime
 tokio = { version = "1.36", features = ["full"] }
+futures-util = "0.3"
 
-# Database
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "migrate", "macros"] }
-rusqlite = { version = "0.31", features = ["bundled"] }
+# Database - IMPORTANT: Enable chrono feature for DateTime support
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "migrate", "macros", "chrono"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -43,12 +42,13 @@ env_logger = "0.11"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Date/Time
-chrono = { version = "0.4", features = ["serde"] }
+# Date/Time - Enable clock feature for Utc::now()
+chrono = { version = "0.4", features = ["serde", "clock"] }
 
 # System Operations
 sysinfo = "0.30"
 whoami = "1.4"
+libc = "0.2"
 
 # Error Handling
 thiserror = "1.0"
@@ -58,7 +58,7 @@ anyhow = "1.0"
 validator = { version = "0.18", features = ["derive"] }
 regex = "1.10"
 
-# HTTP Client (for updates/blocklists)
+# HTTP Client
 reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
 
 # UUID
@@ -67,17 +67,11 @@ uuid = { version = "1.7", features = ["v4", "serde"] }
 # Network utilities
 trust-dns-resolver = "0.23"
 
-[dev-dependencies]
-actix-web-test = "0.1"
-
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
-
-[profile.dev]
-opt-level = 0
 
 [[bin]]
 name = "web-guardian"

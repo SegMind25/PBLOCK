@@ -2,7 +2,6 @@ use crate::database::DbPool;
 use crate::errors::AppError;
 use crate::models::*;
 use chrono::Utc;
-use sqlx::Row;
 
 // User operations
 pub async fn create_user(

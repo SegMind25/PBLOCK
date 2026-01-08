@@ -1,5 +1,5 @@
 use std::time::Duration;
-use sysinfo::{ProcessExt, System, SystemExt};
+use sysinfo::System;
 use tokio::time::sleep;
 
 pub struct ProcessMonitor {
