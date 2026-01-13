@@ -1,15 +1,14 @@
-#include <windows.h>
 #include <iostream>
 #include <fstream>
 #include <string>
 #include <vector>
+#include <windows.h>
+#include <shlobj.h>
 #include <thread>
 #include <chrono>
-#include <shlobj.h>
 
 const std::string HOSTS_FILE = "C:\\Windows\\System32\\drivers\\etc\\hosts";
-const std::string CONFIG_DIR = std::string(getenv("APPDATA")) + "\\ContentBlocker";
-const std::string CONFIG_FILE = CONFIG_DIR + "\\config.dat";
+const std::string CONFIG_FILE = "C:\\ProgramData\\content_blocker.conf";
 
 std::vector<std::string> blocked_domains = {
     "pornhub.com",
@@ -22,57 +21,63 @@ std::vector<std::string> blocked_domains = {
     "spankbang.com",
     "eporner.com",
     "txxx.com"
-    // Add more as needed
 };
 
-// Simple XOR encryption for password storage
-std::string xorEncrypt(const std::string& data, const std::string& key) {
-    std::string result = data;
-    for (size_t i = 0; i < data.length(); i++) {
-        result[i] = data[i] ^ key[i % key.length()];
+// Simple hash function for Windows (use stronger hashing in production)
+std::string hashPassword(const std::string& password) {
+    HCRYPTPROV hProv = 0;
+    HCRYPTHASH hHash = 0;
+    BYTE hash[32];
+    DWORD hashLen = 32;
+    std::string result;
+
+    if (CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT)) {
+        if (CryptCreateHash(hProv, CALG_SHA_256, 0, 0, &hHash)) {
+            if (CryptHashData(hHash, (BYTE*)password.c_str(), password.length(), 0)) {
+                if (CryptGetHashParam(hHash, HP_HASHVAL, hash, &hashLen, 0)) {
+                    char hex[3];
+                    for (DWORD i = 0; i < hashLen; i++) {
+                        sprintf_s(hex, "%02x", hash[i]);
+                        result += hex;
+                    }
+                }
+            }
+            CryptDestroyHash(hHash);
+        }
+        CryptReleaseContext(hProv, 0);
     }
     return result;
 }
 
-bool isAdmin() {
-    BOOL isAdmin = FALSE;
-    PSID adminGroup = NULL;
-    SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
-    
-    if (AllocateAndInitializeSid(&ntAuthority, 2, SECURITY_BUILTIN_DOMAIN_RID,
-        DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0, &adminGroup)) {
-        CheckTokenMembership(NULL, adminGroup, &isAdmin);
-        FreeSid(adminGroup);
-    }
-    return isAdmin;
-}
-
-void ensureConfigDir() {
-    CreateDirectoryA(CONFIG_DIR.c_str(), NULL);
-}
-
-void savePasswordHash(const std::string& password) {
-    ensureConfigDir();
-    std::string encrypted = xorEncrypt(password, "ContentBlockerKey2024");
-    
-    std::ofstream config(CONFIG_FILE, std::ios::binary);
+void savePasswordHash(const std::string& hash) {
+    std::ofstream config(CONFIG_FILE);
     if (config.is_open()) {
-        config << encrypted;
+        config << hash << std::endl;
         config.close();
-        SetFileAttributesA(CONFIG_FILE.c_str(), FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
     }
 }
 
 std::string loadPasswordHash() {
-    std::ifstream config(CONFIG_FILE, std::ios::binary);
-    std::string encrypted, decrypted;
-    
+    std::ifstream config(CONFIG_FILE);
+    std::string hash;
     if (config.is_open()) {
-        std::getline(config, encrypted);
-        decrypted = xorEncrypt(encrypted, "ContentBlockerKey2024");
+        std::getline(config, hash);
         config.close();
     }
-    return decrypted;
+    return hash;
+}
+
+bool isAdmin() {
+    BOOL isAdmin = FALSE;
+    SID_IDENTIFIER_AUTHORITY NtAuthority = SECURITY_NT_AUTHORITY;
+    PSID AdministratorsGroup;
+    
+    if (AllocateAndInitializeSid(&NtAuthority, 2, SECURITY_BUILTIN_DOMAIN_RID,
+        DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0, &AdministratorsGroup)) {
+        CheckTokenMembership(NULL, AdministratorsGroup, &isAdmin);
+        FreeSid(AdministratorsGroup);
+    }
+    return isAdmin;
 }
 
 bool isBlocked() {
@@ -111,11 +116,8 @@ void blockContent() {
     // Flush DNS cache
     system("ipconfig /flushdns > nul");
 
-    std::cout << "\n=================================\n";
-    std::cout << "  CONTENT BLOCKING ACTIVATED\n";
-    std::cout << "=================================\n";
-    std::cout << blocked_domains.size() << " domains now blocked.\n";
-    std::cout << "DNS cache flushed.\n\n";
+    std::cout << "✓ Content blocking activated.\n";
+    std::cout << blocked_domains.size() << " domains blocked.\n";
 }
 
 void unblockContent() {
@@ -146,18 +148,15 @@ void unblockContent() {
     hosts_out.close();
 
     system("ipconfig /flushdns > nul");
-    std::cout << "\nContent blocking removed.\n";
+    std::cout << "✓ Content blocking removed.\n";
 }
 
 void setupPassword() {
     std::string password, confirm;
     
-    std::cout << "\n=========================================\n";
-    std::cout << "  SET UP ACCOUNTABILITY PASSWORD\n";
-    std::cout << "=========================================\n\n";
+    std::cout << "\n=== SET UP YOUR ACCOUNTABILITY PASSWORD ===\n";
     std::cout << "This password will be required to disable blocking.\n";
-    std::cout << "IMPORTANT: Make it strong and write it down!\n";
-    std::cout << "Store it with someone you trust if possible.\n\n";
+    std::cout << "Make it strong and WRITE IT DOWN somewhere safe.\n\n";
     
     std::cout << "Enter password: ";
     std::cin >> password;
@@ -165,35 +164,32 @@ void setupPassword() {
     std::cin >> confirm;
 
     if (password != confirm) {
-        std::cout << "\nError: Passwords don't match!\n";
+        std::cout << "Passwords don't match!\n";
         return;
     }
 
     if (password.length() < 8) {
-        std::cout << "\nError: Password too short! Use at least 8 characters.\n";
+        std::cout << "Password too short! Use at least 8 characters.\n";
         return;
     }
 
-    savePasswordHash(password);
-    std::cout << "\n✓ Password set successfully!\n";
-    std::cout << "WRITE IT DOWN NOW and keep it safe.\n\n";
+    std::string hash = hashPassword(password);
+    savePasswordHash(hash);
+    std::cout << "\n✓ Password set successfully.\n";
 }
 
 bool authenticateWithDelay() {
-    std::string stored_password = loadPasswordHash();
-    if (stored_password.empty()) {
-        std::cout << "No password set. Run 'blocker.exe setup' first.\n";
+    std::string stored_hash = loadPasswordHash();
+    if (stored_hash.empty()) {
+        std::cout << "No password set. Please set password first.\n";
         return false;
     }
 
-    std::cout << "\n=========================================\n";
-    std::cout << "  INTENTIONAL 30-SECOND DELAY\n";
-    std::cout << "=========================================\n";
-    std::cout << "Use this time to reconsider.\n";
-    std::cout << "Is this really what you want to do?\n\n";
+    std::cout << "\n⏳ Intentional 30-second delay...\n";
+    std::cout << "Use this time to reconsider your decision.\n";
     
     for (int i = 30; i > 0; i--) {
-        std::cout << "  " << i << " seconds remaining...\r" << std::flush;
+        std::cout << i << "... " << std::flush;
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     std::cout << "\n\n";
@@ -202,72 +198,40 @@ bool authenticateWithDelay() {
     std::cout << "Enter password to disable blocking: ";
     std::cin >> password;
 
-    if (password == stored_password) {
-        std::cout << "\n✓ Authentication successful.\n";
+    std::string input_hash = hashPassword(password);
+    if (input_hash == stored_hash) {
+        std::cout << "✓ Authentication successful.\n";
         return true;
     } else {
-        std::cout << "\n✗ Wrong password!\n";
-        std::this_thread::sleep_for(std::chrono::seconds(3));
+        std::cout << "✗ Wrong password!\n";
         return false;
     }
 }
 
 void showStatus() {
-    std::cout << "\n=========================================\n";
-    std::cout << "    CONTENT BLOCKER STATUS\n";
-    std::cout << "=========================================\n";
-    std::cout << "Status: " << (isBlocked() ? "ACTIVE ✓" : "INACTIVE ✗") << "\n";
+    std::cout << "\n=== CONTENT BLOCKER STATUS ===\n";
+    std::cout << "Status: " << (isBlocked() ? "ACTIVE ✓" : "INACTIVE") << "\n";
     std::cout << "Blocked domains: " << blocked_domains.size() << "\n";
-    std::cout << "Password set: " << (!loadPasswordHash().empty() ? "Yes ✓" : "No ✗") << "\n";
-    std::cout << "=========================================\n\n";
-}
-
-void addToStartup() {
-    char exePath[MAX_PATH];
-    GetModuleFileNameA(NULL, exePath, MAX_PATH);
-    
-    HKEY hKey;
-    const char* subKey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-    
-    if (RegOpenKeyExA(HKEY_CURRENT_USER, subKey, 0, KEY_WRITE, &hKey) == ERROR_SUCCESS) {
-        std::string command = std::string(exePath) + " block";
-        RegSetValueExA(hKey, "ContentBlocker", 0, REG_SZ, 
-                      (BYTE*)command.c_str(), command.length() + 1);
-        RegCloseKey(hKey);
-        std::cout << "✓ Added to Windows startup.\n";
-    }
-}
-
-void removeFromStartup() {
-    HKEY hKey;
-    const char* subKey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-    
-    if (RegOpenKeyExA(HKEY_CURRENT_USER, subKey, 0, KEY_WRITE, &hKey) == ERROR_SUCCESS) {
-        RegDeleteValueA(hKey, "ContentBlocker");
-        RegCloseKey(hKey);
-        std::cout << "✓ Removed from Windows startup.\n";
-    }
+    std::cout << "Password set: " << (!loadPasswordHash().empty() ? "Yes" : "No") << "\n";
+    std::cout << "============================\n\n";
 }
 
 int main(int argc, char* argv[]) {
     if (!isAdmin()) {
-        std::cerr << "\nERROR: This program requires Administrator privileges.\n";
-        std::cerr << "Right-click and select 'Run as Administrator'\n\n";
+        std::cerr << "This program must be run as Administrator.\n";
+        std::cerr << "Right-click and select 'Run as Administrator'.\n";
         system("pause");
         return 1;
     }
 
     if (argc < 2) {
-        std::cout << "\n=========================================\n";
-        std::cout << "  CONTENT BLOCKER - Self-Accountability\n";
-        std::cout << "=========================================\n\n";
-        std::cout << "Commands:\n";
-        std::cout << "  blocker.exe setup      - Set up password\n";
-        std::cout << "  blocker.exe block      - Enable blocking\n";
-        std::cout << "  blocker.exe unblock    - Disable (needs password)\n";
-        std::cout << "  blocker.exe status     - Show current status\n";
-        std::cout << "  blocker.exe startup    - Run on Windows startup\n";
-        std::cout << "  blocker.exe nostartup  - Remove from startup\n\n";
+        std::cout << "\nContent Blocker - Self-Accountability Tool (Windows)\n";
+        std::cout << "==================================================\n\n";
+        std::cout << "Usage:\n";
+        std::cout << "  blocker.exe setup    - Set password\n";
+        std::cout << "  blocker.exe block    - Enable blocking\n";
+        std::cout << "  blocker.exe unblock  - Disable blocking (requires password)\n";
+        std::cout << "  blocker.exe status   - Show current status\n\n";
         system("pause");
         return 0;
     }
@@ -284,18 +248,10 @@ int main(int argc, char* argv[]) {
         }
     } else if (command == "status") {
         showStatus();
-    } else if (command == "startup") {
-        addToStartup();
-    } else if (command == "nostartup") {
-        removeFromStartup();
     } else {
         std::cout << "Unknown command: " << command << "\n";
     }
 
-    if (argc < 3 || std::string(argv[argc-1]) != "silent") {
-        std::cout << "\n";
-        system("pause");
-    }
-
+    system("pause");
     return 0;
 }
