@@ -1,6 +1,12 @@
-# PBLOCK - Content Blocker
+<p align="center">
+  <img src="AndroidVersion/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="PBLOCK Icon" width="120" />
+</p>
 
-A self-accountability content blocking tool that prevents access to adult websites by modifying the system hosts file. Available for **Linux**, **Windows**, and **Android**.
+<h1 align="center">PBLOCK - Content Blocker</h1>
+
+<p align="center">
+A self-accountability content blocking tool that prevents access to adult websites by modifying the system hosts file. Available for <b>Linux</b>, <b>Windows</b>, and <b>Android</b>.
+</p>
 
 ## Project Structure
 
