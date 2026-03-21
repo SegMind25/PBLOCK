@@ -1,8 +1,36 @@
+# Build outputs
 target/
-node_modules/
 dist/
+*.o
+*.exe
+build/
+
+# Dependencies
+node_modules/
+
+# IDE / OS
 .DS_Store
 *.log
+.idea/
+*.iml
+.vscode/
+
+# Environment
 .env
+
+# Lock files
 pnpm-lock.yaml
 Cargo.lock
+
+# Android
+.gradle/
+local.properties
+*.apk
+*.aab
+.cxx/
+AndroidVersion/.project
+AndroidVersion/.settings/
+
+# Compiled binaries
+LinuxVersion/blocker
+WindowsVersion/PBLOCK.exe
