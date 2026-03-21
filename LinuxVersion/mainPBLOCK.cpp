@@ -27,8 +27,25 @@ std::vector<std::string> blocked_domains = {
     // Add more domains as needed
 };
 
+std::string generateSalt() {
+    const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789./";
+    std::string salt = "$6$";
+    std::ifstream urandom("/dev/urandom", std::ios::binary);
+    if (urandom.is_open()) {
+        for (int i = 0; i < 16; i++) {
+            unsigned char c;
+            urandom.read(reinterpret_cast<char*>(&c), 1);
+            salt += charset[c % (sizeof(charset) - 1)];
+        }
+        urandom.close();
+    }
+    salt += "$";
+    return salt;
+}
+
 std::string hashPassword(const std::string& password) {
-    return crypt(password.c_str(), "$6$randomsalt");
+    std::string salt = generateSalt();
+    return crypt(password.c_str(), salt.c_str());
 }
 
 bool verifyPassword(const std::string& password, const std::string& hash) {

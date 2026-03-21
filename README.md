@@ -1,308 +1,133 @@
-# Web Guardian - Parental Control Application
+# PBLOCK - Content Blocker
 
-A robust parental control application built with Rust (backend) and Vue.js (frontend) to prevent access to inappropriate websites.
+A self-accountability content blocking tool that prevents access to adult websites by modifying the system hosts file. Available for **Linux**, **Windows**, and **Android**.
 
-## 🏗️ Project Structure
+## Project Structure
 
 ```
-web-guardian/
+PBLOCK/
 ├── README.md
 ├── .gitignore
-├── docker-compose.yml (optional)
 │
-├── backend/                      # Rust Backend
-│   ├── Cargo.toml
-│   ├── Cargo.lock
-│   ├── .env.example
-│   ├── src/
-│   │   ├── main.rs
-│   │   ├── lib.rs
-│   │   ├── config/
-│   │   │   ├── mod.rs
-│   │   │   └── settings.rs
-│   │   ├── models/
-│   │   │   ├── mod.rs
-│   │   │   ├── user.rs
-│   │   │   ├── blocked_site.rs
-│   │   │   └── access_log.rs
-│   │   ├── services/
-│   │   │   ├── mod.rs
-│   │   │   ├── dns_filter.rs
-│   │   │   ├── host_file_manager.rs
-│   │   │   ├── process_monitor.rs
-│   │   │   └── encryption.rs
-│   │   ├── handlers/
-│   │   │   ├── mod.rs
-│   │   │   ├── auth.rs
-│   │   │   ├── filter.rs
-│   │   │   └── health.rs
-│   │   ├── middleware/
-│   │   │   ├── mod.rs
-│   │   │   ├── auth.rs
-│   │   │   └── cors.rs
-│   │   ├── database/
-│   │   │   ├── mod.rs
-│   │   │   ├── schema.rs
-│   │   │   └── connection.rs
-│   │   ├── utils/
-│   │   │   ├── mod.rs
-│   │   │   ├── crypto.rs
-│   │   │   └── validator.rs
-│   │   └── errors/
-│   │       ├── mod.rs
-│   │       └── app_error.rs
-│   │
-│   └── migrations/
-│       └── 001_initial_setup.sql
+├── LinuxVersion/
+│   └── mainPBLOCK.cpp           # Linux CLI tool (C++)
 │
-├── frontend/                     # Vue.js Frontend
-│   ├── package.json
-│   ├── pnpm-lock.yaml
-│   ├── vite.config.js
-│   ├── index.html
-│   ├── .env.example
-│   ├── public/
-│   │   └── favicon.ico
-│   │
-│   └── src/
-│       ├── main.js
-│       ├── App.vue
-│       ├── assets/
-│       │   ├── styles/
-│       │   │   ├── main.css
-│       │   │   └── variables.css
-│       │   └── images/
-│       │       └── logo.png
-│       ├── components/
-│       │   ├── common/
-│       │   │   ├── Button.vue
-│       │   │   ├── Input.vue
-│       │   │   ├── Modal.vue
-│       │   │   └── Loader.vue
-│       │   ├── layout/
-│       │   │   ├── Header.vue
-│       │   │   ├── Sidebar.vue
-│       │   │   └── Footer.vue
-│       │   └── dashboard/
-│       │       ├── StatusCard.vue
-│       │       ├── BlockedSitesList.vue
-│       │       └── ActivityLog.vue
-│       ├── views/
-│       │   ├── InitialSetup.vue
-│       │   ├── ParentLogin.vue
-│       │   ├── Dashboard.vue
-│       │   ├── Settings.vue
-│       │   └── Locked.vue
-│       ├── router/
-│       │   └── index.js
-│       ├── stores/
-│       │   ├── auth.js
-│       │   ├── filter.js
-│       │   └── settings.js
-│       ├── services/
-│       │   ├── api.js
-│       │   ├── auth.service.js
-│       │   └── filter.service.js
-│       ├── composables/
-│       │   ├── useAuth.js
-│       │   └── useFilter.js
-│       └── utils/
-│           ├── constants.js
-│           ├── validators.js
-│           └── helpers.js
+├── WindowsVersion/
+│   └── mainPBLOCK.cpp           # Windows CLI tool (C++)
 │
-└── installer/                    # System Installer
-    ├── windows/
-    │   ├── setup.nsi            # NSIS installer script
-    │   └── install.ps1          # PowerShell installer
-    ├── linux/
-    │   ├── install.sh
-    │   └── systemd/
-    │       └── web-guardian.service
-    └── macos/
-        └── install.sh
+└── AndroidVersion/              # Android app (Java + C++ JNI)
+    ├── build.gradle
+    ├── settings.gradle
+    ├── gradle.properties
+    ├── setup.sh
+    ├── app/
+    │   ├── build.gradle
+    │   └── src/main/
+    │       ├── AndroidManifest.xml
+    │       ├── cpp/
+    │       │   ├── CMakeLists.txt
+    │       │   └── mainPBLOCK.cpp       # Native JNI code
+    │       ├── java/com/pblock/app/
+    │       │   └── MainActivity.java    # Android UI + logic
+    │       └── res/
+    │           ├── layout/activity_main.xml
+    │           └── values/
+    │               ├── strings.xml
+    │               └── colors.xml
+    └── gradle/wrapper/
 ```
 
-## 🎯 Features
+## How It Works
 
-### Core Functionality
-- **Persistent Protection**: Once activated, cannot be disabled without parent authentication
-- **System-Level Blocking**: Modifies hosts file and DNS settings for robust filtering
-- **Process Monitoring**: Prevents tampering with system files or services
-- **Encrypted Storage**: All sensitive data encrypted at rest
-- **Stealth Mode**: Minimal UI footprint, runs as system service
+1. **Set a password** - You create a strong password (min 8 characters) that will be required to disable blocking
+2. **Enable blocking** - The tool adds entries to your system's hosts file, redirecting blocked domains to `127.0.0.1`
+3. **Intentional delay** - When you try to disable blocking, there is a mandatory 30-second wait period to help you reconsider
+4. **Password required** - After the delay, you must enter your password to remove the blocks
 
-### Parent Dashboard
-- Initial setup wizard for parent authentication
-- Real-time monitoring of blocked attempts
-- Custom website blocking rules
-- Activity logs and reports
-- Emergency override with secure PIN
+The hosts file entries are wrapped with `# CONTENT_BLOCKER_START` and `# CONTENT_BLOCKER_END` markers for clean insertion and removal.
 
-### Technical Features
-- **Backend**: Actix-web framework with async runtime
-- **Database**: SQLite with encryption
-- **Frontend**: Vue 3 with Composition API
-- **State Management**: Pinia
-- **Build Tool**: Vite + pnpm
-- **Security**: JWT authentication, bcrypt password hashing
+## Features
 
-## 🔧 Technology Stack
+- System-level domain blocking via hosts file modification
+- Password-protected unblocking with SHA-256 hashing
+- 30-second intentional delay before unblocking (time to reconsider)
+- Status display showing active/inactive state and domain count
+- Cross-platform: Linux, Windows, and Android
 
-### Backend
-- **Rust** 1.75+
-- **Actix-web** - Web framework
-- **SQLx** - Database toolkit
-- **Tokio** - Async runtime
-- **Argon2** - Password hashing
-- **jsonwebtoken** - JWT handling
-- **sysinfo** - System monitoring
+## Technology Stack
 
-### Frontend
-- **Vue.js** 3.4+
-- **Vite** 5.0+
-- **Pinia** - State management
-- **Vue Router** 4+
-- **Axios** - HTTP client
-- **TailwindCSS** - Styling
+- **C++17** - Core blocking logic (all platforms)
+- **JNI (Java Native Interface)** - Android native integration
+- **Java** - Android app UI and system interaction
+- **Android SDK 35** - Android build target
+- **CMake 3.22** - Native build system for Android
+- **Gradle 8.x** - Android build tool
 
-## 📋 Prerequisites
+## Prerequisites
 
-- **Rust**: 1.75 or higher
-- **Node.js**: 18.x or higher
-- **pnpm**: 8.x or higher
-- **Administrator/Root privileges**: Required for system-level modifications
+### Linux
+- **g++** with C++17 support
+- **Root/sudo access** (required to modify `/etc/hosts`)
 
-## 🚀 Installation & Setup
+### Windows
+- **MSVC** or **MinGW** with C++17 support
+- **Administrator privileges** (required to modify the hosts file)
 
-### 1. Clone the Repository
+### Android
+- **Android Studio** or Android SDK
+- **NDK** (for native C++ compilation)
+- **Rooted device** (required to modify `/system/etc/hosts`)
+
+## Build & Run
+
+### Linux
 ```bash
-git clone git@github.com:SegMind25/PBLOCK.git
-cd web-guardian
+cd LinuxVersion
+g++ -std=c++17 -o blocker mainPBLOCK.cpp -lcrypt -lpthread
+sudo ./blocker setup    # Set password
+sudo ./blocker block    # Enable blocking
+sudo ./blocker unblock  # Disable blocking (requires password + 30s delay)
+sudo ./blocker status   # Show current status
 ```
 
-### 2. Backend Setup
+### Windows
+Compile `WindowsVersion/mainPBLOCK.cpp` with MSVC or MinGW (requires linking against `advapi32`):
 ```bash
-cd backend
-cp .env.example .env
-# Edit .env with your configuration
-cargo build --release
+cl /EHsc /std:c++17 mainPBLOCK.cpp /link advapi32.lib
+# Run as Administrator:
+blocker.exe setup
+blocker.exe block
+blocker.exe unblock
+blocker.exe status
 ```
 
-### 3. Frontend Setup
+### Android
 ```bash
-cd ../frontend
-pnpm install
-cp .env.example .env
-# Edit .env with your configuration
-pnpm build
+cd AndroidVersion
+# Set your Android SDK path in local.properties
+# Then build with Gradle:
+chmod +x gradlew
+./gradlew assembleDebug
+# Or open the project in Android Studio
 ```
 
-### 4. Run the Application
-```bash
-# Backend (from backend directory)
-cargo run --release
+## Security Notes
 
-# Frontend Development (from frontend directory)
-pnpm dev
+1. **Run with appropriate privileges** - Linux requires `sudo`, Windows requires Administrator, Android requires root
+2. **Use a strong password** - Minimum 8 characters, write it down somewhere safe
+3. **The 30-second delay is intentional** - It gives you time to reconsider before unblocking
+4. **Hosts file modification** - This app modifies system files; back up your hosts file before first use
 
-# Frontend Production Build
-pnpm build
-pnpm preview
-```
+## Contributing
 
-## 🔐 Security Considerations
+Contributions are welcome. If you find security vulnerabilities, please report them responsibly.
 
-1. **Run with appropriate privileges**: The application requires admin/root access to modify system files
-2. **Secure your parent PIN**: Use a strong, unique password
-3. **Regular updates**: Keep the blocklist updated
-4. **Backup configuration**: Store your recovery codes safely
+## License
 
-## 📝 Configuration
+MIT License
 
-### Backend (.env)
-```env
-DATABASE_URL=sqlite://web_guardian.db
-JWT_SECRET=your-super-secret-jwt-key
-SERVER_HOST=127.0.0.1
-SERVER_PORT=8080
-RUST_LOG=info
-```
+## Support
 
-### Frontend (.env)
-```env
-VITE_API_URL=http://localhost:8080
-VITE_APP_TITLE=Web Guardian
-```
-
-## 🛠️ Development
-
-### Running Tests
-```bash
-# Backend tests
-cd backend
-cargo test
-
-# Frontend tests
-cd frontend
-pnpm test
-```
-
-### Code Formatting
-```bash
-# Rust
-cargo fmt
-
-# Vue.js
-pnpm format
-```
-
-## 📦 Building for Production
-
-### Create System Installer
-```bash
-# Windows
-cd installer/windows
-makensis setup.nsi
-
-# Linux
-cd installer/linux
-chmod +x install.sh
-./install.sh
-
-# macOS
-cd installer/macos
-chmod +x install.sh
-./install.sh
-```
-
-## 🔄 Update Strategy
-
-- Application checks for updates on startup
-- Parent can review and approve updates
-- Automatic backup before updates
-
-## ⚠️ Important Notes
-
-1. **One-Time Setup**: The initial configuration is crucial - store recovery codes safely
-2. **System Modifications**: This app modifies system files (hosts, DNS) - backup before installation
-3. **Tamper Protection**: The service runs with system privileges and monitors for tampering
-4. **Legal Compliance**: Ensure compliance with local laws regarding monitoring and parental controls
-
-## 🤝 Contributing
-
-This is a security-focused application. If you find vulnerabilities, please report them responsibly.
-
-## 📄 License
-
-MIT License - See LICENSE file for details
-
-## 🆘 Support
-
-For issues, questions, or support:
+For issues or questions:
 - Open an issue on GitHub
 - Email: modistotube2004@gmail.com
-
----
-
-**USING VUE.JS & RUST :)**
