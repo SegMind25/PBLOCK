@@ -2,6 +2,9 @@ package com.pblock.app;
 
 import androidx.appcompat.app.AppCompatActivity;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -12,18 +15,37 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.InputStreamReader;
 import java.security.MessageDigest;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MainActivity extends AppCompatActivity {
 
+    private static final String TAG = "PBLOCK";
     private static final String HOSTS_FILE = "/system/etc/hosts";
     private String configFile;
 
     private TextView statusText;
     private EditText passwordInput;
+    private Button setupBtn;
+    private Button blockBtn;
+    private Button unblockBtn;
+    private Button statusBtn;
 
-    // Load native library
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final AtomicBoolean isCountingDown = new AtomicBoolean(false);
+
+    private static boolean nativeLibLoaded = false;
+
     static {
-        System.loadLibrary("pblock");
+        try {
+            System.loadLibrary("pblock");
+            nativeLibLoaded = true;
+        } catch (UnsatisfiedLinkError e) {
+            Log.e(TAG, "Failed to load native library: " + e.getMessage());
+            nativeLibLoaded = false;
+        }
     }
 
     // Native method declarations
@@ -44,38 +66,64 @@ public class MainActivity extends AppCompatActivity {
         statusText = findViewById(R.id.statusText);
         passwordInput = findViewById(R.id.passwordInput);
 
-        Button setupBtn = findViewById(R.id.setupButton);
-        Button blockBtn = findViewById(R.id.blockButton);
-        Button unblockBtn = findViewById(R.id.unblockButton);
-        Button statusBtn = findViewById(R.id.statusButton);
+        setupBtn = findViewById(R.id.setupButton);
+        blockBtn = findViewById(R.id.blockButton);
+        unblockBtn = findViewById(R.id.unblockButton);
+        statusBtn = findViewById(R.id.statusButton);
 
         setupBtn.setOnClickListener(v -> setupPassword());
         blockBtn.setOnClickListener(v -> blockContent());
         unblockBtn.setOnClickListener(v -> unblockContent());
         statusBtn.setOnClickListener(v -> showStatus());
 
-        checkRootAccess();
-        showStatus();
+        if (!nativeLibLoaded) {
+            statusText.setText("Error: Native library failed to load.\n"
+                + "Please reinstall the app or check your device compatibility.");
+            setButtonsEnabled(false);
+            return;
+        }
+
+        // Run root check and status on background thread to avoid ANR
+        executor.execute(() -> {
+            final boolean hasRoot = checkRootAccess();
+            mainHandler.post(() -> {
+                if (!hasRoot) {
+                    statusText.setText("Warning: Root access not available.\n\n"
+                        + "This app requires a rooted device to modify the hosts file.\n\n"
+                        + "For non-rooted devices, use the NSFW blocking scripts "
+                        + "in the scripts/ folder on GitHub.\n\n"
+                        + "Options for non-rooted phones:\n"
+                        + "1. Use Private DNS (Android 9+)\n"
+                        + "2. Use ADB from a computer\n"
+                        + "3. Install a DNS-based blocker app");
+                }
+                showStatusAsync();
+            });
+        });
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        executor.shutdownNow();
     }
 
     private boolean checkRootAccess() {
+        Process process = null;
         try {
-            Process process = Runtime.getRuntime().exec("su");
+            process = Runtime.getRuntime().exec("su");
             DataOutputStream os = new DataOutputStream(process.getOutputStream());
             os.writeBytes("exit\n");
             os.flush();
             int exitCode = process.waitFor();
-
-            if (exitCode != 0) {
-                Toast.makeText(this, "Root access required! Please root your device.",
-                    Toast.LENGTH_LONG).show();
-                return false;
-            }
-            return true;
+            return exitCode == 0;
         } catch (Exception e) {
-            Toast.makeText(this, "Root access not available.",
-                Toast.LENGTH_LONG).show();
+            Log.w(TAG, "Root access not available: " + e.getMessage());
             return false;
+        } finally {
+            if (process != null) {
+                process.destroy();
+            }
         }
     }
 
@@ -91,7 +139,7 @@ public class MainActivity extends AppCompatActivity {
             }
             return hexString.toString();
         } catch (Exception e) {
-            e.printStackTrace();
+            Log.e(TAG, "Hash error: " + e.getMessage());
             return null;
         }
     }
@@ -102,7 +150,7 @@ public class MainActivity extends AppCompatActivity {
             writer.write(hash);
             writer.close();
         } catch (Exception e) {
-            e.printStackTrace();
+            Log.e(TAG, "Save password error: " + e.getMessage());
         }
     }
 
@@ -118,8 +166,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private boolean isBlocked() {
+        if (!nativeLibLoaded) return false;
+        Process process = null;
         try {
-            Process process = Runtime.getRuntime().exec("su");
+            process = Runtime.getRuntime().exec("su");
             DataOutputStream os = new DataOutputStream(process.getOutputStream());
             os.writeBytes("cat " + HOSTS_FILE + "\n");
             os.writeBytes("exit\n");
@@ -136,7 +186,11 @@ public class MainActivity extends AppCompatActivity {
             }
             process.waitFor();
         } catch (Exception e) {
-            e.printStackTrace();
+            Log.e(TAG, "isBlocked check error: " + e.getMessage());
+        } finally {
+            if (process != null) {
+                process.destroy();
+            }
         }
         return false;
     }
@@ -157,46 +211,78 @@ public class MainActivity extends AppCompatActivity {
         }
 
         String hash = hashPassword(password);
-        savePasswordHash(hash);
-        Toast.makeText(this, "Password set successfully!", Toast.LENGTH_SHORT).show();
-        passwordInput.setText("");
-        showStatus();
-    }
-
-    private void blockContent() {
-        if (isBlocked()) {
-            Toast.makeText(this, "Blocking is already active!", Toast.LENGTH_SHORT).show();
+        if (hash == null) {
+            Toast.makeText(this, "Error hashing password. Please try again.",
+                Toast.LENGTH_SHORT).show();
             return;
         }
 
-        try {
-            Process process = Runtime.getRuntime().exec("su");
-            DataOutputStream os = new DataOutputStream(process.getOutputStream());
+        savePasswordHash(hash);
+        Toast.makeText(this, "Password set successfully!", Toast.LENGTH_SHORT).show();
+        passwordInput.setText("");
+        showStatusAsync();
+    }
 
-            // Remount /system as read-write
-            os.writeBytes("mount -o remount,rw /system\n");
-
-            // Get block entries from native code and write them
-            String blockEntries = generateBlockEntriesNative();
-            for (String entryLine : blockEntries.split("\n")) {
-                os.writeBytes("echo '" + entryLine + "' >> " + HOSTS_FILE + "\n");
-            }
-
-            // Remount as read-only
-            os.writeBytes("mount -o remount,ro /system\n");
-            os.writeBytes("exit\n");
-            os.flush();
-            process.waitFor();
-
-            Toast.makeText(this, "Content blocking activated!", Toast.LENGTH_SHORT).show();
-            showStatus();
-        } catch (Exception e) {
-            Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show();
-            e.printStackTrace();
+    private void blockContent() {
+        if (!nativeLibLoaded) {
+            Toast.makeText(this, "Native library not loaded.", Toast.LENGTH_SHORT).show();
+            return;
         }
+
+        setButtonsEnabled(false);
+        statusText.setText("Activating content blocking...");
+
+        executor.execute(() -> {
+            try {
+                if (isBlocked()) {
+                    mainHandler.post(() -> {
+                        Toast.makeText(this, "Blocking is already active!",
+                            Toast.LENGTH_SHORT).show();
+                        setButtonsEnabled(true);
+                        showStatusAsync();
+                    });
+                    return;
+                }
+
+                Process process = Runtime.getRuntime().exec("su");
+                DataOutputStream os = new DataOutputStream(process.getOutputStream());
+
+                os.writeBytes("mount -o remount,rw /system\n");
+
+                String blockEntries = generateBlockEntriesNative();
+                for (String entryLine : blockEntries.split("\n")) {
+                    os.writeBytes("echo '" + entryLine + "' >> " + HOSTS_FILE + "\n");
+                }
+
+                os.writeBytes("mount -o remount,ro /system\n");
+                os.writeBytes("exit\n");
+                os.flush();
+                process.waitFor();
+                process.destroy();
+
+                mainHandler.post(() -> {
+                    Toast.makeText(this, "Content blocking activated!",
+                        Toast.LENGTH_SHORT).show();
+                    setButtonsEnabled(true);
+                    showStatusAsync();
+                });
+            } catch (Exception e) {
+                Log.e(TAG, "Block error: " + e.getMessage());
+                mainHandler.post(() -> {
+                    Toast.makeText(this, "Error: " + e.getMessage(),
+                        Toast.LENGTH_LONG).show();
+                    setButtonsEnabled(true);
+                });
+            }
+        });
     }
 
     private void unblockContent() {
+        if (!nativeLibLoaded) {
+            Toast.makeText(this, "Native library not loaded.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         String storedHash = loadPasswordHash();
         if (storedHash == null) {
             Toast.makeText(this, "No password set! Set password first.",
@@ -212,74 +298,114 @@ public class MainActivity extends AppCompatActivity {
         }
 
         String inputHash = hashPassword(password);
+        if (inputHash == null) {
+            Toast.makeText(this, "Error verifying password.",
+                Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         if (!inputHash.equals(storedHash)) {
             Toast.makeText(this, "Wrong password!", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        // 30-second delay to reconsider
+        if (isCountingDown.get()) {
+            Toast.makeText(this, "Already counting down...", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        isCountingDown.set(true);
         statusText.setText("Waiting 30 seconds...\nUse this time to reconsider.");
         setButtonsEnabled(false);
 
-        new Thread(() -> {
+        executor.execute(() -> {
             try {
                 for (int i = 30; i > 0; i--) {
+                    if (Thread.currentThread().isInterrupted()) {
+                        mainHandler.post(() -> {
+                            setButtonsEnabled(true);
+                            isCountingDown.set(false);
+                        });
+                        return;
+                    }
                     final int count = i;
-                    runOnUiThread(() ->
-                        statusText.setText(count + " seconds remaining...\nUse this time to reconsider."));
+                    mainHandler.post(() ->
+                        statusText.setText(count + " seconds remaining...\n"
+                            + "Use this time to reconsider."));
                     Thread.sleep(1000);
                 }
 
-                runOnUiThread(() -> {
-                    try {
-                        Process process = Runtime.getRuntime().exec("su");
-                        DataOutputStream os = new DataOutputStream(process.getOutputStream());
+                // Perform unblock
+                Process process = Runtime.getRuntime().exec("su");
+                DataOutputStream os = new DataOutputStream(process.getOutputStream());
 
-                        String startMarker = getStartMarkerNative();
-                        String endMarker = getEndMarkerNative();
+                String startMarker = getStartMarkerNative();
+                String endMarker = getEndMarkerNative();
 
-                        os.writeBytes("mount -o remount,rw /system\n");
-                        os.writeBytes("sed -i '/" + startMarker + "/,/" + endMarker + "/d' "
-                            + HOSTS_FILE + "\n");
-                        os.writeBytes("mount -o remount,ro /system\n");
-                        os.writeBytes("exit\n");
-                        os.flush();
-                        process.waitFor();
+                os.writeBytes("mount -o remount,rw /system\n");
+                os.writeBytes("sed -i '/" + startMarker + "/,/" + endMarker
+                    + "/d' " + HOSTS_FILE + "\n");
+                os.writeBytes("mount -o remount,ro /system\n");
+                os.writeBytes("exit\n");
+                os.flush();
+                process.waitFor();
+                process.destroy();
 
-                        Toast.makeText(this, "Content blocking removed!",
-                            Toast.LENGTH_SHORT).show();
-                        passwordInput.setText("");
-                        showStatus();
-                    } catch (Exception e) {
-                        Toast.makeText(this, "Error: " + e.getMessage(),
-                            Toast.LENGTH_LONG).show();
-                    }
+                mainHandler.post(() -> {
+                    Toast.makeText(this, "Content blocking removed!",
+                        Toast.LENGTH_SHORT).show();
+                    passwordInput.setText("");
+                    isCountingDown.set(false);
                     setButtonsEnabled(true);
+                    showStatusAsync();
                 });
             } catch (InterruptedException e) {
-                e.printStackTrace();
-                runOnUiThread(() -> setButtonsEnabled(true));
+                Log.w(TAG, "Countdown interrupted");
+                mainHandler.post(() -> {
+                    setButtonsEnabled(true);
+                    isCountingDown.set(false);
+                });
+            } catch (Exception e) {
+                Log.e(TAG, "Unblock error: " + e.getMessage());
+                mainHandler.post(() -> {
+                    Toast.makeText(this, "Error: " + e.getMessage(),
+                        Toast.LENGTH_LONG).show();
+                    setButtonsEnabled(true);
+                    isCountingDown.set(false);
+                });
             }
-        }).start();
+        });
     }
 
     private void setButtonsEnabled(boolean enabled) {
-        findViewById(R.id.setupButton).setEnabled(enabled);
-        findViewById(R.id.blockButton).setEnabled(enabled);
-        findViewById(R.id.unblockButton).setEnabled(enabled);
-        findViewById(R.id.statusButton).setEnabled(enabled);
+        if (setupBtn != null) setupBtn.setEnabled(enabled);
+        if (blockBtn != null) blockBtn.setEnabled(enabled);
+        if (unblockBtn != null) unblockBtn.setEnabled(enabled);
+        if (statusBtn != null) statusBtn.setEnabled(enabled);
     }
 
     private void showStatus() {
-        boolean blocked = isBlocked();
-        boolean passwordSet = loadPasswordHash() != null;
-        int domainCount = getBlockedDomainCountNative();
+        showStatusAsync();
+    }
 
-        String status = "=== PBLOCK STATUS ===\n\n" +
-                       "Protection: " + (blocked ? "ACTIVE" : "INACTIVE") + "\n" +
-                       "Blocked domains: " + domainCount + "\n" +
-                       "Password set: " + (passwordSet ? "Yes" : "No") + "\n";
+    private void showStatusAsync() {
+        if (!nativeLibLoaded) {
+            statusText.setText("Error: Native library not loaded.");
+            return;
+        }
 
-        statusText.setText(status);
+        executor.execute(() -> {
+            final boolean blocked = isBlocked();
+            final boolean passwordSet = loadPasswordHash() != null;
+            final int domainCount = getBlockedDomainCountNative();
+
+            mainHandler.post(() -> {
+                String status = "=== PBLOCK STATUS ===\n\n"
+                    + "Protection: " + (blocked ? "ACTIVE" : "INACTIVE") + "\n"
+                    + "Blocked domains: " + domainCount + "\n"
+                    + "Password set: " + (passwordSet ? "Yes" : "No") + "\n";
+                statusText.setText(status);
+            });
+        });
     }
 }
