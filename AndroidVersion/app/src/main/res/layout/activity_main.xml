@@ -63,6 +63,25 @@
         android:layout_marginBottom="8dp" />
 
     <Button
+        android:id="@+id/deviceAdminButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/btn_device_admin"
+        android:layout_marginBottom="8dp"
+        android:backgroundTint="#FF5722" />
+
+    <TextView
+        android:id="@+id/deviceAdminWarning"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/device_admin_warning"
+        android:textSize="12sp"
+        android:textColor="#FF5722"
+        android:padding="8dp"
+        android:layout_marginBottom="8dp"
+        android:visibility="gone" />
+
+    <Button
         android:id="@+id/statusButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

@@ -1,10 +1,15 @@
 package com.pblock.app;
 
 import androidx.appcompat.app.AppCompatActivity;
+import android.app.admin.DevicePolicyManager;
+import android.content.ComponentName;
+import android.content.Intent;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -23,38 +28,24 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "PBLOCK";
     private static final String HOSTS_FILE = "/system/etc/hosts";
+    private static final int REQUEST_CODE_ENABLE_ADMIN = 1001;
     private String configFile;
 
     private TextView statusText;
+    private TextView deviceAdminWarning;
     private EditText passwordInput;
     private Button setupBtn;
     private Button blockBtn;
     private Button unblockBtn;
     private Button statusBtn;
+    private Button deviceAdminBtn;
+
+    private DevicePolicyManager devicePolicyManager;
+    private ComponentName adminComponent;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean isCountingDown = new AtomicBoolean(false);
-
-    private static boolean nativeLibLoaded = false;
-
-    static {
-        try {
-            System.loadLibrary("pblock");
-            nativeLibLoaded = true;
-        } catch (UnsatisfiedLinkError e) {
-            Log.e(TAG, "Failed to load native library: " + e.getMessage());
-            nativeLibLoaded = false;
-        }
-    }
-
-    // Native method declarations
-    public native String stringFromJNI();
-    public native String getBlockedDomainsNative();
-    public native int getBlockedDomainCountNative();
-    public native String generateBlockEntriesNative();
-    public native String getStartMarkerNative();
-    public native String getEndMarkerNative();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -63,27 +54,31 @@ public class MainActivity extends AppCompatActivity {
 
         configFile = getFilesDir().getAbsolutePath() + "/password.conf";
 
+        devicePolicyManager = (DevicePolicyManager) getSystemService(DEVICE_POLICY_SERVICE);
+        adminComponent = new ComponentName(this, PBlockDeviceAdminReceiver.class);
+
         statusText = findViewById(R.id.statusText);
         passwordInput = findViewById(R.id.passwordInput);
+        deviceAdminWarning = findViewById(R.id.deviceAdminWarning);
 
         setupBtn = findViewById(R.id.setupButton);
         blockBtn = findViewById(R.id.blockButton);
         unblockBtn = findViewById(R.id.unblockButton);
         statusBtn = findViewById(R.id.statusButton);
+        deviceAdminBtn = findViewById(R.id.deviceAdminButton);
 
         setupBtn.setOnClickListener(v -> setupPassword());
         blockBtn.setOnClickListener(v -> blockContent());
         unblockBtn.setOnClickListener(v -> unblockContent());
         statusBtn.setOnClickListener(v -> showStatus());
+        deviceAdminBtn.setOnClickListener(v -> toggleDeviceAdmin());
 
-        if (!nativeLibLoaded) {
-            statusText.setText("Error: Native library failed to load.\n"
-                + "Please reinstall the app or check your device compatibility.");
-            setButtonsEnabled(false);
-            return;
+        updateDeviceAdminUI();
+
+        if (isDeviceAdminActive()) {
+            startForegroundService();
         }
 
-        // Run root check and status on background thread to avoid ANR
         executor.execute(() -> {
             final boolean hasRoot = checkRootAccess();
             mainHandler.post(() -> {
@@ -166,7 +161,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private boolean isBlocked() {
-        if (!nativeLibLoaded) return false;
         Process process = null;
         try {
             process = Runtime.getRuntime().exec("su");
@@ -178,9 +172,8 @@ public class MainActivity extends AppCompatActivity {
             BufferedReader reader = new BufferedReader(
                 new InputStreamReader(process.getInputStream()));
             String line;
-            String startMarker = getStartMarkerNative();
             while ((line = reader.readLine()) != null) {
-                if (line.contains(startMarker)) {
+                if (line.contains(PBlockHelper.BLOCK_START_MARKER)) {
                     return true;
                 }
             }
@@ -224,11 +217,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void blockContent() {
-        if (!nativeLibLoaded) {
-            Toast.makeText(this, "Native library not loaded.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
         setButtonsEnabled(false);
         statusText.setText("Activating content blocking...");
 
@@ -249,7 +237,7 @@ public class MainActivity extends AppCompatActivity {
 
                 os.writeBytes("mount -o remount,rw /system\n");
 
-                String blockEntries = generateBlockEntriesNative();
+                String blockEntries = PBlockHelper.generateBlockEntries();
                 for (String entryLine : blockEntries.split("\n")) {
                     os.writeBytes("echo '" + entryLine + "' >> " + HOSTS_FILE + "\n");
                 }
@@ -278,11 +266,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void unblockContent() {
-        if (!nativeLibLoaded) {
-            Toast.makeText(this, "Native library not loaded.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
         String storedHash = loadPasswordHash();
         if (storedHash == null) {
             Toast.makeText(this, "No password set! Set password first.",
@@ -335,12 +318,11 @@ public class MainActivity extends AppCompatActivity {
                     Thread.sleep(1000);
                 }
 
-                // Perform unblock
                 Process process = Runtime.getRuntime().exec("su");
                 DataOutputStream os = new DataOutputStream(process.getOutputStream());
 
-                String startMarker = getStartMarkerNative();
-                String endMarker = getEndMarkerNative();
+                String startMarker = PBlockHelper.BLOCK_START_MARKER;
+                String endMarker = PBlockHelper.BLOCK_END_MARKER;
 
                 os.writeBytes("mount -o remount,rw /system\n");
                 os.writeBytes("sed -i '/" + startMarker + "/,/" + endMarker
@@ -377,6 +359,87 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    private boolean isDeviceAdminActive() {
+        return devicePolicyManager != null && devicePolicyManager.isAdminActive(adminComponent);
+    }
+
+    private void toggleDeviceAdmin() {
+        if (isDeviceAdminActive()) {
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Deactivate Device Admin")
+                .setMessage("WARNING: This will allow PBLOCK to be uninstalled.\n\n"
+                    + "To remove PBLOCK after deactivating:\n"
+                    + "1. Go to Settings > Security > Device Administrators\n"
+                    + "2. Deactivate PBLOCK\n"
+                    + "3. Uninstall the app")
+                .setPositiveButton("Deactivate", (dialog, which) -> {
+                    devicePolicyManager.removeActiveAdmin(adminComponent);
+                    updateDeviceAdminUI();
+                    Toast.makeText(this, "Device Admin deactivated. "
+                        + "You can now uninstall PBLOCK.", Toast.LENGTH_LONG).show();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+        } else {
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Activate Device Admin")
+                .setMessage("Activating Device Admin will:\n\n"
+                    + "- Prevent PBLOCK from being uninstalled\n"
+                    + "- Protect content blocking from being bypassed\n\n"
+                    + "To remove PBLOCK later, you must first deactivate "
+                    + "Device Admin in Settings > Security > Device Administrators.")
+                .setPositiveButton("Activate", (dialog, which) -> {
+                    Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
+                    intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent);
+                    intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                        "Device Admin prevents PBLOCK from being uninstalled. "
+                        + "This ensures content blocking protection stays active.");
+                    startActivityForResult(intent, REQUEST_CODE_ENABLE_ADMIN);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+        }
+    }
+
+    private void updateDeviceAdminUI() {
+        boolean active = isDeviceAdminActive();
+        if (active) {
+            deviceAdminBtn.setText(R.string.btn_deactivate_device_admin);
+            deviceAdminWarning.setVisibility(View.VISIBLE);
+            startForegroundService();
+        } else {
+            deviceAdminBtn.setText(R.string.btn_device_admin);
+            deviceAdminWarning.setVisibility(View.GONE);
+            stopForegroundService();
+        }
+    }
+
+    private void startForegroundService() {
+        Intent serviceIntent = new Intent(this, PBlockService.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent);
+        } else {
+            startService(serviceIntent);
+        }
+    }
+
+    private void stopForegroundService() {
+        Intent serviceIntent = new Intent(this, PBlockService.class);
+        stopService(serviceIntent);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_CODE_ENABLE_ADMIN) {
+            updateDeviceAdminUI();
+            if (isDeviceAdminActive()) {
+                Toast.makeText(this, "Device Admin activated successfully!",
+                    Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
     private void setButtonsEnabled(boolean enabled) {
         if (setupBtn != null) setupBtn.setEnabled(enabled);
         if (blockBtn != null) blockBtn.setEnabled(enabled);
@@ -389,21 +452,18 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showStatusAsync() {
-        if (!nativeLibLoaded) {
-            statusText.setText("Error: Native library not loaded.");
-            return;
-        }
-
         executor.execute(() -> {
             final boolean blocked = isBlocked();
             final boolean passwordSet = loadPasswordHash() != null;
-            final int domainCount = getBlockedDomainCountNative();
+            final int domainCount = PBlockHelper.getBlockedDomainCount();
 
             mainHandler.post(() -> {
                 String status = "=== PBLOCK STATUS ===\n\n"
                     + "Protection: " + (blocked ? "ACTIVE" : "INACTIVE") + "\n"
                     + "Blocked domains: " + domainCount + "\n"
-                    + "Password set: " + (passwordSet ? "Yes" : "No") + "\n";
+                    + "Password set: " + (passwordSet ? "Yes" : "No") + "\n"
+                    + "Device Admin: " + (isDeviceAdminActive() ? "ACTIVE" : "INACTIVE") + "\n"
+                    + "Foreground Service: " + (isDeviceAdminActive() ? "RUNNING" : "STOPPED") + "\n";
                 statusText.setText(status);
             });
         });

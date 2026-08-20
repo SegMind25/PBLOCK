@@ -8,4 +8,9 @@
     <string name="btn_block">Enable Blocking</string>
     <string name="btn_unblock">Disable Blocking</string>
     <string name="btn_status">Refresh Status</string>
+    <string name="btn_device_admin">Activate Device Admin</string>
+    <string name="btn_deactivate_device_admin">Deactivate Device Admin</string>
+    <string name="device_admin_warning">Device Admin is active. The app cannot be uninstalled until you deactivate Device Admin in Settings &gt; Security &gt; Device Administrators.</string>
+    <string name="device_admin_description">Activating Device Admin prevents PBLOCK from being uninstalled. This protects the content blocking settings from being bypassed by removing the app.</string>
+    <string name="device_admin_removal_instructions">To remove PBLOCK:\n1. Open Settings\n2. Go to Security &gt; Device Administrators\n3. Deactivate PBLOCK\n4. Uninstall the app</string>
 </resources>
