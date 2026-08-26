@@ -121,6 +121,10 @@ public class MainActivity extends AppCompatActivity {
                 }
                 updateVpnButton();
                 showStatusAsync();
+
+                if (hasRoot && isHostsBlocked()) {
+                    startProtectionService();
+                }
             });
         });
     }
@@ -279,6 +283,9 @@ public class MainActivity extends AppCompatActivity {
             try {
                 String hosts = readHostsViaSu();
                 if (hosts.contains(PBlockHelper.BLOCK_START_MARKER)) {
+                    BootHostsManager hostsManager = new BootHostsManager(this);
+                    hostsManager.saveRootBlockingState(true);
+                    startProtectionService();
                     mainHandler.post(() -> {
                         Toast.makeText(this, "Root blocking already active!",
                             Toast.LENGTH_SHORT).show();
@@ -290,11 +297,18 @@ public class MainActivity extends AppCompatActivity {
                 boolean ok = writeHostsViaSu(
                     PBlockHelper.applyBlockSection(hosts));
                 boolean verified = ok && isHostsBlocked();
+                if (verified) {
+                    BootHostsManager hostsManager = new BootHostsManager(this);
+                    hostsManager.saveRootBlockingState(true);
+                    startProtectionService();
+                }
+                final boolean finalVerified = verified;
                 mainHandler.post(() -> {
-                    if (verified) {
+                    if (finalVerified) {
                         Toast.makeText(this,
                             "ROOT BLOCKING ACTIVE! All blocked domains are now "
-                                + "blocked system-wide. Survives reboot.",
+                                + "blocked system-wide. Survives reboot. "
+                                + "Solve puzzles to deactivate.",
                             Toast.LENGTH_LONG).show();
                     } else {
                         Toast.makeText(this,
@@ -314,6 +328,19 @@ public class MainActivity extends AppCompatActivity {
                 });
             }
         });
+    }
+
+    private void startProtectionService() {
+        try {
+            Intent serviceIntent = new Intent(this, PBlockService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent);
+            } else {
+                startService(serviceIntent);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to start protection service: " + e.getMessage());
+        }
     }
 
     private void promptUnblockHosts() {
@@ -381,6 +408,9 @@ public class MainActivity extends AppCompatActivity {
                     Thread.sleep(1000);
                 }
 
+                BootHostsManager hostsManager = new BootHostsManager(this);
+                hostsManager.saveRootBlockingState(false);
+
                 boolean hostsOk = true;
                 if (hasRoot) {
                     try {
@@ -397,6 +427,9 @@ public class MainActivity extends AppCompatActivity {
                 stopVpn.setAction(PBlockVpnService.ACTION_STOP);
                 startService(stopVpn);
                 setVpnUserEnabled(false);
+
+                Intent stopService = new Intent(this, PBlockService.class);
+                stopService(stopService);
 
                 boolean adminDeactivated = false;
                 if (isDeviceAdminActive()) {
@@ -978,6 +1011,9 @@ public class MainActivity extends AppCompatActivity {
             final boolean alwaysOn = isAlwaysOnVpnEnabled();
             final int domainCount = PBlockHelper.getBlockedDomainCount();
             final boolean hostsBlocked = hasRoot && isHostsBlocked();
+            final boolean serviceRunning = isServiceRunning(PBlockService.class);
+            final BootHostsManager hostsManager = new BootHostsManager(this);
+            final boolean bootPersistence = hostsManager.wasRootBlockingActive();
 
             mainHandler.post(() -> {
                 StringBuilder s = new StringBuilder("=== PBLOCK STATUS ===\n\n");
@@ -997,10 +1033,22 @@ public class MainActivity extends AppCompatActivity {
                     .append("Mode: ").append(hasRoot ? "ROOT (hosts file)" : "VPN (DNS)")
                     .append("\n")
                     .append("Device Admin: ")
-                    .append(isDeviceAdminActive() ? "ACTIVE (hidden)" : "INACTIVE").append("\n");
+                    .append(isDeviceAdminActive() ? "ACTIVE (protected)" : "INACTIVE").append("\n")
+                    .append("Protection Service: ").append(serviceRunning ? "RUNNING" : "STOPPED").append("\n")
+                    .append("Boot Persistence: ").append(bootPersistence ? "ENABLED" : "DISABLED").append("\n");
                 statusText.setText(s.toString());
             });
         });
+    }
+
+    private boolean isServiceRunning(Class<?> serviceClass) {
+        android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
+        for (android.app.ActivityManager.RunningServiceInfo service : am.getRunningServices(Integer.MAX_VALUE)) {
+            if (serviceClass.getName().equals(service.service.getClassName())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override

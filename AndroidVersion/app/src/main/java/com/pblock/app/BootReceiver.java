@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.util.Log;
 
 public class BootReceiver extends BroadcastReceiver {
 
@@ -23,16 +24,31 @@ public class BootReceiver extends BroadcastReceiver {
         if (!boot) {
             return;
         }
+
+        Log.i(TAG, "Boot completed, re-applying protection...");
+
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        boolean enabledByUser = prefs.getBoolean(KEY_ENABLED, false);
-        if (!enabledByUser || PBlockVpnService.isRunning()) {
-            return;
+        boolean vpnEnabledByUser = prefs.getBoolean(KEY_ENABLED, false);
+
+        if (vpnEnabledByUser && !PBlockVpnService.isRunning()) {
+            try {
+                androidx.core.content.ContextCompat.startForegroundService(
+                    context, new Intent(context, PBlockVpnService.class));
+                Log.i(TAG, "VPN blocking restarted after boot");
+            } catch (Exception e) {
+                Log.e(TAG, "Boot VPN start failed: " + e.getMessage());
+            }
         }
+
+        BootHostsManager hostsManager = new BootHostsManager(context);
+        hostsManager.reapplyRootBlockingOnBoot();
+
         try {
-            androidx.core.content.ContextCompat.startForegroundService(
-                context, new Intent(context, PBlockVpnService.class));
+            Intent serviceIntent = new Intent(context, PBlockService.class);
+            androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent);
+            Log.i(TAG, "PBlockService started after boot");
         } catch (Exception e) {
-            android.util.Log.e(TAG, "Boot start failed: " + e.getMessage());
+            Log.e(TAG, "Failed to start PBlockService after boot: " + e.getMessage());
         }
     }
 }
