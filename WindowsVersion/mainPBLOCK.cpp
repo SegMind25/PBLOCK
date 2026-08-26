@@ -6,6 +6,10 @@
 #include <shlobj.h>
 #include <thread>
 #include <chrono>
+#include <random>
+#include <algorithm>
+#include <sstream>
+#include <functional>
 
 const std::string HOSTS_FILE = "C:\\Windows\\System32\\drivers\\etc\\hosts";
 const std::string CONFIG_FILE = "C:\\ProgramData\\content_blocker.conf";
@@ -175,6 +179,247 @@ std::string loadPasswordHash() {
     return hash;
 }
 
+// Algorithm puzzle system for unblock verification
+struct Puzzle {
+    std::string question;
+    int answer;
+    std::string hint;
+};
+
+std::string generateFibonacciQuestion(std::mt19937& rng) {
+    int n = 6 + rng() % 5;
+    std::vector<int> fib = {0, 1};
+    for (int i = 2; i <= n + 2; i++) {
+        fib.push_back(fib[i-1] + fib[i-2]);
+    }
+    std::stringstream ss;
+    ss << "What is the " << n << "th Fibonacci number? (0, 1, 1, 2, 3, 5, ...)";
+    return ss.str();
+}
+
+int getFibonacciAnswer(int n) {
+    std::vector<int> fib = {0, 1};
+    for (int i = 2; i <= n + 2; i++) {
+        fib.push_back(fib[i-1] + fib[i-2]);
+    }
+    return fib[n];
+}
+
+std::string generateGCDQuestion(std::mt19937& rng) {
+    int a = 12 + rng() % 88;
+    int b = 12 + rng() % 88;
+    std::stringstream ss;
+    ss << "What is GCD(" << a << ", " << b << ")?";
+    return ss.str();
+}
+
+int gcd(int a, int b) {
+    while (b) {
+        int t = b;
+        b = a % b;
+        a = t;
+    }
+    return a;
+}
+
+std::string generatePrimeCheckQuestion(std::mt19937& rng) {
+    int primes[] = {101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193, 197, 199};
+    int nonPrimes[] = {100, 102, 104, 105, 106, 108, 110, 111, 112, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125};
+    
+    if (rng() % 2 == 0) {
+        int p = primes[rng() % 21];
+        std::stringstream ss;
+        ss << "Is " << p << " prime? (1=yes, 0=no)";
+        return ss.str();
+    } else {
+        int np = nonPrimes[rng() % 21];
+        std::stringstream ss;
+        ss << "Is " << np << " prime? (1=yes, 0=no)";
+        return ss.str();
+    }
+}
+
+int getPrimeCheckAnswer(int n) {
+    if (n < 2) return 0;
+    for (int i = 2; i * i <= n; i++) {
+        if (n % i == 0) return 0;
+    }
+    return 1;
+}
+
+std::string generateModularQuestion(std::mt19937& rng) {
+    int a = 10 + rng() % 90;
+    int b = 2 + rng() % 8;
+    int m = 3 + rng() % 7;
+    std::stringstream ss;
+    ss << "What is (" << a << " * " << b << ") mod " << m << "?";
+    return ss.str();
+}
+
+std::string generateSequenceQuestion(std::mt19937& rng) {
+    int start = rng() % 10 + 1;
+    int step = rng() % 5 + 2;
+    int missing = rng() % 4 + 2;
+    std::stringstream ss;
+    ss << "What comes next in the sequence? ";
+    for (int i = 0; i < 5; i++) {
+        if (i == missing) {
+            ss << "? ";
+        } else {
+            ss << (start + step * i) << " ";
+        }
+    }
+    return ss.str();
+}
+
+int getSequenceAnswer(int start, int step, int pos) {
+    return start + step * pos;
+}
+
+Puzzle generatePuzzle(std::mt19937& rng, int difficulty) {
+    Puzzle p;
+    int type = rng() % 10;
+    
+    switch (type) {
+        case 0: {
+            p.question = generateFibonacciQuestion(rng);
+            int n = 6 + rng() % 5;
+            p.answer = getFibonacciAnswer(n);
+            p.hint = "Each number is the sum of the two before it";
+            break;
+        }
+        case 1: {
+            int a = 12 + rng() % 88;
+            int b = 12 + rng() % 88;
+            p.question = generateGCDQuestion(rng);
+            p.answer = gcd(a, b);
+            p.hint = "Use Euclidean algorithm";
+            break;
+        }
+        case 2: {
+            p.question = generatePrimeCheckQuestion(rng);
+            int n;
+            std::istringstream iss(p.question.substr(3));
+            iss >> n;
+            p.answer = getPrimeCheckAnswer(n);
+            p.hint = "Check divisibility up to sqrt(n)";
+            break;
+        }
+        case 3: {
+            int a = 10 + rng() % 90;
+            int b = 2 + rng() % 8;
+            int m = 3 + rng() % 7;
+            p.question = generateModularQuestion(rng);
+            p.answer = (a * b) % m;
+            p.hint = "Calculate product first, then mod";
+            break;
+        }
+        case 4: {
+            int start = rng() % 10 + 1;
+            int step = rng() % 5 + 2;
+            int missing = rng() % 4 + 2;
+            p.question = generateSequenceQuestion(rng);
+            p.answer = getSequenceAnswer(start, step, missing);
+            p.hint = "Find the pattern (constant difference)";
+            break;
+        }
+        case 5: {
+            int n = 2 + rng() % 6;
+            int fact = 1;
+            for (int i = 2; i <= n; i++) fact *= i;
+            std::stringstream ss;
+            ss << "What is " << n << "! (factorial)?";
+            p.question = ss.str();
+            p.answer = fact;
+            p.hint = "n! = n * (n-1) * ... * 2 * 1";
+            break;
+        }
+        case 6: {
+            int base = 2 + rng() % 4;
+            int exp = 2 + rng() % 4;
+            int result = 1;
+            for (int i = 0; i < exp; i++) result *= base;
+            std::stringstream ss;
+            ss << "What is " << base << "^" << exp << "?";
+            p.question = ss.str();
+            p.answer = result;
+            p.hint = "Exponentiation";
+            break;
+        }
+        case 7: {
+            int a = 10 + rng() % 40;
+            int b = 10 + rng() % 40;
+            std::stringstream ss;
+            ss << "What is LCM(" << a << ", " << b << ")?";
+            p.question = ss.str();
+            p.answer = (a * b) / gcd(a, b);
+            p.hint = "LCM(a,b) = a*b / GCD(a,b)";
+            break;
+        }
+        case 8: {
+            int n = 3 + rng() % 5;
+            int sum = n * (n + 1) / 2;
+            std::stringstream ss;
+            ss << "What is the sum of 1 to " << n << "?";
+            p.question = ss.str();
+            p.answer = sum;
+            p.hint = "Sum = n*(n+1)/2";
+            break;
+        }
+        case 9: {
+            int a = 2 + rng() % 8;
+            int b = 2 + rng() % 8;
+            int c = 2 + rng() % 8;
+            std::stringstream ss;
+            ss << "Solve: " << a << "x + " << b << " = " << c << ". What is x?";
+            p.question = ss.str();
+            p.answer = (c - b) / a;
+            p.hint = "x = (c - b) / a";
+            break;
+        }
+    }
+    return p;
+}
+
+bool solvePuzzleChallenge(int puzzleCount) {
+    std::random_device rd;
+    std::mt19937 rng(rd());
+    
+    std::cout << "\n=== ALGORITHM PUZZLE CHALLENGE ===\n";
+    std::cout << "Solve " << puzzleCount << " puzzles to disable blocking.\n";
+    std::cout << "Each puzzle is harder than the last!\n\n";
+    
+    for (int i = 0; i < puzzleCount; i++) {
+        int difficulty = i + 1;
+        Puzzle p = generatePuzzle(rng, difficulty);
+        
+        std::cout << "--- Puzzle " << (i + 1) << "/" << puzzleCount << " (Difficulty: " << difficulty << ") ---\n";
+        std::cout << p.question << "\n";
+        std::cout << "Hint: " << p.hint << "\n";
+        std::cout << "Your answer: ";
+        
+        int userAnswer;
+        if (!(std::cin >> userAnswer)) {
+            std::cin.clear();
+            std::cin.ignore(10000, '\n');
+            std::cout << "Invalid input! Puzzle set reset.\n";
+            i = -1;
+            continue;
+        }
+        
+        if (userAnswer == p.answer) {
+            std::cout << "✓ Correct!\n\n";
+        } else {
+            std::cout << "✗ Wrong! The answer was " << p.answer << ".\n";
+            std::cout << "Puzzle set reset. Starting over from puzzle 1.\n\n";
+            i = -1;
+        }
+    }
+    
+    std::cout << "All puzzles solved!\n";
+    return true;
+}
+
 bool isAdmin() {
     BOOL isAdmin = FALSE;
     SID_IDENTIFIER_AUTHORITY NtAuthority = SECURITY_NT_AUTHORITY;
@@ -314,9 +559,11 @@ void setupPassword() {
 }
 
 bool authenticateWithDelay() {
-    std::string stored_hash = loadPasswordHash();
-    if (stored_hash.empty()) {
-        std::cout << "No password set. Please set password first.\n";
+    std::cout << "\n=== ALGORITHM PUZZLE VERIFICATION ===\n";
+    std::cout << "To disable blocking, you must solve 10 algorithm puzzles.\n";
+    std::cout << "This is harder than a password - you need to THINK!\n\n";
+    
+    if (!solvePuzzleChallenge(10)) {
         return false;
     }
 
@@ -329,18 +576,7 @@ bool authenticateWithDelay() {
     }
     std::cout << "\n\n";
 
-    std::string password;
-    std::cout << "Enter password to disable blocking: ";
-    std::cin >> password;
-
-    std::string input_hash = hashPassword(password);
-    if (input_hash == stored_hash) {
-        std::cout << "✓ Authentication successful.\n";
-        return true;
-    } else {
-        std::cout << "✗ Wrong password!\n";
-        return false;
-    }
+    return true;
 }
 
 void showStatus() {

@@ -14,6 +14,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -63,6 +64,9 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        getWindow().setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE);
         setContentView(R.layout.activity_main);
 
         configFile = getFilesDir().getAbsolutePath() + "/password.conf";
@@ -317,28 +321,125 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, "Already counting down...", Toast.LENGTH_SHORT).show();
             return;
         }
-        final EditText input = new EditText(this);
-        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT
-            | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        input.setHint("Password");
+        startFullUnlockChallenge();
+    }
 
-        new android.app.AlertDialog.Builder(this)
-            .setTitle("Disable Root Blocking")
-            .setMessage("Enter your password to start the 30-second countdown.")
-            .setView(input)
-            .setCancelable(false)
-            .setPositiveButton("Unlock", (dialog, which) -> {
-                String storedHash = loadPasswordHash();
-                String inputHash = hashPassword(input.getText().toString());
-                if (storedHash == null || inputHash == null
-                        || !inputHash.equals(storedHash)) {
-                    Toast.makeText(this, "Wrong password!", Toast.LENGTH_SHORT).show();
-                    return;
+    private int unlockPuzzlesSolved;
+
+    private void startFullUnlockChallenge() {
+        unlockPuzzlesSolved = 0;
+        Toast.makeText(this,
+            "Solve " + UNLOCK_PUZZLE_COUNT + " challenges to disable EVERYTHING!",
+            Toast.LENGTH_LONG).show();
+        mainHandler.postDelayed(this::launchUnlockPuzzle, 500);
+    }
+
+    private void launchUnlockPuzzle() {
+        new UltimatePuzzleDialog(this, unlockPuzzlesSolved, new UltimatePuzzleDialog.Listener() {
+            @Override
+            public void onSolved() {
+                unlockPuzzlesSolved++;
+                if (unlockPuzzlesSolved >= UNLOCK_PUZZLE_COUNT) {
+                    Toast.makeText(MainActivity.this,
+                        "ALL 10 CHALLENGES PASSED! Disabling everything...",
+                        Toast.LENGTH_LONG).show();
+                    mainHandler.postDelayed(MainActivity.this::disableAllProtection, 500);
+                } else {
+                    Toast.makeText(MainActivity.this,
+                        "Challenge " + unlockPuzzlesSolved + "/" + UNLOCK_PUZZLE_COUNT
+                            + " passed! Next is harder...",
+                        Toast.LENGTH_SHORT).show();
+                    mainHandler.postDelayed(MainActivity.this::launchUnlockPuzzle, 700);
                 }
-                startHostsDisableCountdown();
-            })
-            .setNegativeButton("Cancel", null)
-            .show();
+            }
+
+            @Override
+            public void onGivenUp() {
+                unlockPuzzlesSolved = 0;
+                Toast.makeText(MainActivity.this,
+                    "Reset! 10 NEW challenges generated - solve all from the start!",
+                    Toast.LENGTH_LONG).show();
+                mainHandler.postDelayed(MainActivity.this::launchUnlockPuzzle, 700);
+            }
+        }).show();
+    }
+
+    private void disableAllProtection() {
+        isCountingDown.set(true);
+        setButtonsEnabled(false);
+        statusText.setText("DISABLE IN 30s...\nThis will turn off ALL protection.");
+        executor.execute(() -> {
+            try {
+                for (int i = 30; i > 0; i--) {
+                    if (Thread.currentThread().isInterrupted()) {
+                        mainHandler.post(() -> { setButtonsEnabled(true); isCountingDown.set(false); });
+                        return;
+                    }
+                    final int count = i;
+                    mainHandler.post(() ->
+                        statusText.setText("DISABLE IN " + count + "s...\nAll protection will be removed."));
+                    Thread.sleep(1000);
+                }
+
+                boolean hostsOk = true;
+                if (hasRoot) {
+                    try {
+                        String hosts = readHostsViaSu();
+                        if (hosts.contains(PBlockHelper.BLOCK_START_MARKER)) {
+                            hostsOk = writeHostsViaSu(PBlockHelper.removeBlockSection(hosts));
+                        }
+                    } catch (Exception e) {
+                        hostsOk = false;
+                    }
+                }
+
+                Intent stopVpn = new Intent(this, PBlockVpnService.class);
+                stopVpn.setAction(PBlockVpnService.ACTION_STOP);
+                startService(stopVpn);
+                setVpnUserEnabled(false);
+
+                boolean adminDeactivated = false;
+                if (isDeviceAdminActive()) {
+                    try {
+                        devicePolicyManager.removeActiveAdmin(adminComponent);
+                        adminDeactivated = true;
+                    } catch (Exception e) {
+                        Log.e(TAG, "Admin deactivation failed: " + e.getMessage());
+                    }
+                }
+
+                final boolean hOk = hostsOk;
+                final boolean aOk = adminDeactivated;
+                mainHandler.post(() -> {
+                    StringBuilder msg = new StringBuilder("ALL PROTECTION DISABLED:\n\n");
+                    if (hasRoot) msg.append("Hosts blocking: ").append(hOk ? "REMOVED" : "FAILED").append("\n");
+                    msg.append("VPN blocking: STOPPED\n");
+                    if (aOk) msg.append("Device Admin: DEACTIVATED\n");
+                    msg.append("\nPBLOCK is now fully inactive.");
+
+                    new android.app.AlertDialog.Builder(MainActivity.this)
+                        .setTitle("Protection Removed")
+                        .setMessage(msg.toString())
+                        .setCancelable(false)
+                        .setPositiveButton("OK", null)
+                        .show();
+
+                    isCountingDown.set(false);
+                    setButtonsEnabled(true);
+                    updateVpnButton();
+                    updateDeviceAdminUI();
+                    showStatusAsync();
+                });
+            } catch (InterruptedException e) {
+                mainHandler.post(() -> { setButtonsEnabled(true); isCountingDown.set(false); });
+            } catch (Exception e) {
+                mainHandler.post(() -> {
+                    Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    setButtonsEnabled(true);
+                    isCountingDown.set(false);
+                });
+            }
+        });
     }
 
     private void startHostsDisableCountdown() {
@@ -400,35 +501,8 @@ public class MainActivity extends AppCompatActivity {
     private void promptOwnerUnlock() {
         if (!PBlockVpnService.isRunning() || isCountingDown.get()) {
             return;
-        }        final EditText input = new EditText(this);
-        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT
-            | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        input.setHint("Password");
-
-        new android.app.AlertDialog.Builder(this)
-            .setTitle("PBLOCK locked")
-            .setMessage("VPN blocking is protected.\nEnter your password to start "
-                + "the 30-second disable countdown.")
-            .setView(input)
-            .setPositiveButton("Unlock", (dialog, which) -> {
-                String storedHash = loadPasswordHash();
-                String password = input.getText().toString();
-
-                if (storedHash == null) {
-                    Toast.makeText(this,
-                        "No password was ever set - cannot verify owner.",
-                        Toast.LENGTH_LONG).show();
-                    return;
-                }
-                String inputHash = hashPassword(password);
-                if (inputHash == null || !inputHash.equals(storedHash)) {
-                    Toast.makeText(this, "Wrong password!", Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                startDisableCountdown();
-            })
-            .setNegativeButton("Cancel", null)
-            .show();
+        }
+        startFullUnlockChallenge();
     }
 
     private void setVpnUserEnabled(boolean enabled) {
@@ -563,6 +637,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private static final int UNLOCK_PUZZLE_COUNT = 10;
     private static final int PUZZLE_COUNT = 5;
     private static final int[] PUZZLE_LEGS = {1, 1, 2, 2, 3};
     private int puzzlesSolved;

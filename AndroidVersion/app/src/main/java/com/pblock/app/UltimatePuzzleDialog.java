@@ -8,14 +8,16 @@ import android.graphics.Paint;
 import android.graphics.RectF;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -23,7 +25,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 
-public class AlgoPuzzleDialog {
+public class UltimatePuzzleDialog {
 
     public interface Listener {
         void onSolved();
@@ -34,30 +36,37 @@ public class AlgoPuzzleDialog {
     private static final int RED = 1;
     private static final int GREEN = 2;
     private static final int BLUE = 3;
+    private static final int YELLOW = 4;
+    private static final int PURPLE = 5;
 
-    private static final int DIR_UP = 0;
-    private static final int DIR_DOWN = 1;
-    private static final int DIR_LEFT = 2;
-    private static final int DIR_RIGHT = 3;
     private static final int[] DX = {0, 0, -1, 1};
-    private static final int[] DY = {-1, 1, 0, 0};
+    private static final int[] DY = {-1, 1, 0, 1};
     private static final String[] ARROW = {"\u2191", "\u2193", "\u2190", "\u2192"};
+    private static final int[] DIRS = {0, 1, 2, 3};
 
-    private static final int MAX_STEPS = 60;
-    private static final int STEP_MS = 250;
-    private static final int SLOTS = 10;
+    private static final int MAX_STEPS = 50;
+    private static final int STEP_MS = 200;
+    private static final int SLOTS = 12;
 
     private static class Cmd {
         boolean isFunc;
         int func;
         int dir;
         int guard;
+        boolean isTurnLeft;
+        boolean isTurnRight;
+        boolean isJump;
 
         String label() {
+            if (isTurnLeft) return "TL";
+            if (isTurnRight) return "TR";
+            if (isJump) return "JP";
             String s = isFunc ? ("F" + func) : ARROW[dir];
             if (guard == RED) return "R" + s;
             if (guard == GREEN) return "G" + s;
             if (guard == BLUE) return "B" + s;
+            if (guard == YELLOW) return "Y" + s;
+            if (guard == PURPLE) return "P" + s;
             return s;
         }
 
@@ -65,6 +74,8 @@ public class AlgoPuzzleDialog {
             if (guard == RED) return Color.parseColor("#E53935");
             if (guard == GREEN) return Color.parseColor("#43A047");
             if (guard == BLUE) return Color.parseColor("#1E88E5");
+            if (guard == YELLOW) return Color.parseColor("#FDD835");
+            if (guard == PURPLE) return Color.parseColor("#8E24AA");
             return Color.parseColor("#37474F");
         }
     }
@@ -73,12 +84,13 @@ public class AlgoPuzzleDialog {
     private final Listener listener;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Random rnd = new Random();
+    private final int puzzleIndex;
 
     private int[][] cells;
     private boolean[][] goals;
     private boolean[][] collected;
-    private int W, H, startX, startY;
-    private int botX, botY;
+    private int W, H, startX, startY, startDir;
+    private int botX, botY, botDir;
     private int goalsTotal, goalsCollected;
 
     private final Cmd[] f1 = new Cmd[SLOTS];
@@ -95,23 +107,26 @@ public class AlgoPuzzleDialog {
     private int stepsUsed;
     private final ArrayDeque<int[]> frames = new ArrayDeque<>();
 
-    public AlgoPuzzleDialog(Context context, int legs, Listener listener) {
+    public UltimatePuzzleDialog(Context context, int puzzleIndex, Listener listener) {
         this.context = context;
+        this.puzzleIndex = puzzleIndex;
         this.listener = listener;
-        generateLevel(legs);
+        generateHardLevel(puzzleIndex);
     }
 
-    private void generateLevel(int legs) {
-        for (int attempt = 0; attempt < 300; attempt++) {
-            W = 6 + rnd.nextInt(4);
-            H = 5 + rnd.nextInt(3);
+    private void generateHardLevel(int idx) {
+        int legs = 4 + (idx * 2);
+        for (int attempt = 0; attempt < 500; attempt++) {
+            W = 7 + rnd.nextInt(5);
+            H = 6 + rnd.nextInt(4);
             cells = new int[H][W];
             goals = new boolean[H][W];
             startX = 1 + rnd.nextInt(W - 2);
             startY = 1 + rnd.nextInt(H - 2);
+            startDir = rnd.nextInt(4);
             int curX = startX, curY = startY;
             int lastDir = -1;
-            int prevColor = 1 + rnd.nextInt(3);
+            int prevColor = 1 + rnd.nextInt(5);
             cells[curY][curX] = prevColor;
             boolean ok = true;
             int lastX = curX, lastY = curY;
@@ -124,10 +139,10 @@ public class AlgoPuzzleDialog {
                     }
                 }
                 Collections.shuffle(dirs, rnd);
-                int len = 2 + rnd.nextInt(4);
+                int len = 2 + rnd.nextInt(5);
                 int color;
                 do {
-                    color = 1 + rnd.nextInt(3);
+                    color = 1 + rnd.nextInt(5);
                 } while (color == prevColor && rnd.nextBoolean());
                 boolean placed = false;
                 for (int dir : dirs) {
@@ -160,7 +175,7 @@ public class AlgoPuzzleDialog {
                 lastX = curX;
                 lastY = curY;
             }
-            if (!ok || countCells() < 8) continue;
+            if (!ok || countCells() < 10) continue;
 
             goals[lastY][lastX] = true;
             goalsTotal = 1;
@@ -172,107 +187,107 @@ public class AlgoPuzzleDialog {
                     }
                 }
             }
-            if (goalsTotal < 3) goalsTotal = 3;
+            if (goalsTotal < 4) goalsTotal = 4;
             botX = startX;
             botY = startY;
+            botDir = startDir;
             return;
         }
-        W = 7;
-        H = 6;
+        W = 9;
+        H = 7;
         cells = new int[H][W];
         goals = new boolean[H][W];
-        for (int x = 0; x < W; x++) cells[2][x] = RED;
-        for (int y = 2; y < H; y++) cells[y][W - 1] = BLUE;
-        for (int x = 0; x < W; x++) cells[4][x] = GREEN;
-        startX = 0;
-        startY = 2;
-        botX = startX;
-        botY = startY;
-        goals[4][W - 1] = true;
-        goals[2][0] = true;
-        goals[5][W - 2] = true;
-        goalsTotal = 3;
+        for (int x = 0; x < W; x++) { cells[2][x] = RED; cells[4][x] = GREEN; }
+        for (int y = 2; y < H; y++) { cells[y][3] = BLUE; cells[y][6] = YELLOW; }
+        cells[3][1] = PURPLE; cells[3][5] = PURPLE;
+        startX = 0; startY = 2; startDir = 3;
+        botX = startX; botY = startY; botDir = startDir;
+        goals[2][W - 1] = true; goals[4][0] = true; goals[6][6] = true; goals[0][3] = true;
+        goalsTotal = 4;
     }
 
     private int opposite(int dir) {
-        if (dir == DIR_UP) return DIR_DOWN;
-        if (dir == DIR_DOWN) return DIR_UP;
-        if (dir == DIR_LEFT) return DIR_RIGHT;
-        return DIR_LEFT;
+        if (dir == 0) return 1;
+        if (dir == 1) return 0;
+        if (dir == 2) return 3;
+        return 2;
     }
 
     private int countCells() {
         int n = 0;
-        for (int y = 0; y < H; y++) {
-            for (int x = 0; x < W; x++) {
+        for (int y = 0; y < H; y++)
+            for (int x = 0; x < W; x++)
                 if (cells[y][x] != VOID) n++;
-            }
-        }
         return n;
     }
 
-    public void show() {
-        float density = context.getResources().getDisplayMetrics().density;
-        int pad = dp(16);
+    private String getPuzzleName() {
+        String[] names = {
+            "TURBO BOT", "CYBER MAZE", "QUANTUM PATH", "NEON LABYRINTH", "MATRIX RUNNER",
+            "VOID NAVIGATOR", "PIXEL STORM", "HEX TRACE", "FLUX GRID", "CORE BREACH"
+        };
+        return names[puzzleIndex % names.length];
+    }
 
+    public void show() {
+        int pad = dp(14);
         root = new LinearLayout(context);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(pad, pad, pad, pad);
-        root.setBackgroundColor(Color.parseColor("#1C262E"));
+        root.setBackgroundColor(Color.parseColor("#0D1117"));
 
         TextView title = new TextView(context);
-        title.setText("ALGORITHM PUZZLE\nProgram the bot: collect ALL targets");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(15);
+        title.setText("CHALLENGE " + (puzzleIndex + 1) + "/10: " + getPuzzleName() + "\nCollect ALL targets. Harder path, tighter constraints!");
+        title.setTextColor(Color.parseColor("#58A6FF"));
+        title.setTextSize(13);
         title.setGravity(Gravity.CENTER);
         root.addView(title);
 
         FrameLayout boardWrap = new FrameLayout(context);
         board = new AlgoBoardView(context);
-        int boardH = dp(230);
-        FrameLayout.LayoutParams bp = new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, boardH);
-        board.setLayoutParams(bp);
-        boardWrap.addView(board);
-        boardWrap.setPadding(0, dp(10), 0, dp(6));
+        int boardH = dp(220);
+        boardWrap.addView(board, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, boardH));
+        boardWrap.setPadding(0, dp(8), 0, dp(4));
         root.addView(boardWrap);
 
         msgView = new TextView(context);
         msgView.setTextColor(Color.parseColor("#FFD54F"));
-        msgView.setTextSize(13);
+        msgView.setTextSize(12);
         msgView.setGravity(Gravity.CENTER);
-        msgView.setText("Tap slots to build your program. F1 runs first. "
-            + "Put F1 inside itself to LOOP.\nLetters R/G/B = only run when standing on that color.");
+        msgView.setText("Slots: " + SLOTS + " | Max steps: " + MAX_STEPS
+            + " | TL=Turn Left, TR=Turn Right\nR/G/B/Y/P = only on that color. "
+            + "Loop: put F1 in F1.");
         root.addView(msgView);
 
         root.addView(sectionLabel("F1 (main)"));
-        HorizontalScrollView scroll1 = new HorizontalScrollView(context);
-        scroll1.addView(slotRow(true));
-        root.addView(scroll1);
+        HorizontalScrollView sv1 = new HorizontalScrollView(context);
+        sv1.addView(slotRow(true));
+        root.addView(sv1);
 
         root.addView(sectionLabel("F2"));
-        HorizontalScrollView scroll2 = new HorizontalScrollView(context);
-        scroll2.addView(slotRow(false));
-        root.addView(scroll2);
+        HorizontalScrollView sv2 = new HorizontalScrollView(context);
+        sv2.addView(slotRow(false));
+        root.addView(sv2);
 
         LinearLayout controls = new LinearLayout(context);
         controls.setOrientation(LinearLayout.HORIZONTAL);
         controls.setGravity(Gravity.CENTER);
-        Button runBtn = styledButton("RUN \u25B6", "#43A047");
+        Button runBtn = styledButton("RUN \u25B6", "#238636");
         runBtn.setOnClickListener(v -> startRun());
-        Button resetBtn = styledButton("Reset Bot", "#546E7A");
+        Button resetBtn = styledButton("Reset", "#30363D");
         resetBtn.setOnClickListener(v -> resetRun());
         LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(0,
             LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        rlp.setMargins(dp(4), dp(8), dp(4), 0);
+        rlp.setMargins(dp(4), dp(6), dp(4), 0);
         LinearLayout.LayoutParams rlp2 = new LinearLayout.LayoutParams(0,
             LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        rlp2.setMargins(dp(4), dp(8), dp(4), 0);
+        rlp2.setMargins(dp(4), dp(6), dp(4), 0);
         controls.addView(runBtn, rlp);
         controls.addView(resetBtn, rlp2);
         root.addView(controls);
 
-        Button giveUp = styledButton("Give up (new puzzle set)", "#C62828");
+        Button giveUp = styledButton("Give up (restart ALL 10)", "#DA3633");
         giveUp.setOnClickListener(v -> {
             stopRun();
             dialog.dismiss();
@@ -280,26 +295,30 @@ public class AlgoPuzzleDialog {
         });
         LinearLayout.LayoutParams glp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        glp.setMargins(0, dp(8), 0, 0);
+        glp.setMargins(0, dp(6), 0, 0);
         root.addView(giveUp, glp);
 
         resetRun();
         refreshSlots();
 
-        AlertDialog.Builder b = new AlertDialog.Builder(context);
-        b.setTitle("Algorithm Challenge");
+        AlertDialog.Builder b = new AlertDialog.Builder(context,
+            android.R.style.Theme_DeviceDefault_Dialog_Alert);
+        b.setTitle(null);
         b.setView(root);
         b.setCancelable(false);
         dialog = b.create();
+        dialog.getWindow().setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE);
         dialog.show();
     }
 
     private TextView sectionLabel(String s) {
         TextView t = new TextView(context);
         t.setText(s);
-        t.setTextColor(Color.parseColor("#90CAF9"));
-        t.setTextSize(12);
-        t.setPadding(dp(2), dp(8), 0, dp(2));
+        t.setTextColor(Color.parseColor("#8B949E"));
+        t.setTextSize(11);
+        t.setPadding(dp(2), dp(6), 0, dp(2));
         return t;
     }
 
@@ -308,17 +327,14 @@ public class AlgoPuzzleDialog {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER);
         for (int i = 0; i < SLOTS; i++) {
-            Button btn = styledButton("\u2013", "#37474F");
+            Button btn = styledButton("\u2013", "#21262D");
             int idx = i;
             btn.setOnClickListener(v -> editSlot(isF1, idx));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(46), dp(46));
-            lp.setMargins(dp(3), 0, dp(3), 0);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(44), dp(44));
+            lp.setMargins(dp(2), 0, dp(2), 0);
             row.addView(btn, lp);
-            if (isF1) {
-                f1Btns[i] = new Button[]{btn};
-            } else {
-                f2Btns[i] = new Button[]{btn};
-            }
+            if (isF1) f1Btns[i] = new Button[]{btn};
+            else f2Btns[i] = new Button[]{btn};
         }
         return row;
     }
@@ -326,7 +342,7 @@ public class AlgoPuzzleDialog {
     private Button styledButton(String text, String colorHex) {
         Button b = new Button(context);
         b.setText(text);
-        b.setTextSize(11);
+        b.setTextSize(10);
         b.setAllCaps(false);
         b.setTextColor(Color.WHITE);
         b.setPadding(dp(2), 0, dp(2), 0);
@@ -350,7 +366,7 @@ public class AlgoPuzzleDialog {
         if (c == null) {
             btn.setText("\u2013");
             btn.setBackgroundTintList(android.content.res.ColorStateList.valueOf(
-                Color.parseColor("#37474F")));
+                Color.parseColor("#21262D")));
         } else {
             btn.setText(c.label());
             btn.setBackgroundTintList(android.content.res.ColorStateList.valueOf(
@@ -359,10 +375,7 @@ public class AlgoPuzzleDialog {
     }
 
     private void editSlot(boolean isF1, int index) {
-        if (running) {
-            Toast.makeText(context, "Stop the program first", Toast.LENGTH_SHORT).show();
-            return;
-        }
+        if (running) return;
         final Cmd[] arr = isF1 ? f1 : f2;
         final Cmd current = arr[index];
         final int[] guard = {current == null ? 0 : current.guard};
@@ -373,47 +386,44 @@ public class AlgoPuzzleDialog {
         box.setPadding(dp(12), dp(8), dp(12), 0);
 
         TextView gTitle = new TextView(context);
-        gTitle.setText("1. Color condition (optional):");
+        gTitle.setText("1. Color condition:");
         gTitle.setTextSize(12);
         box.addView(gTitle);
 
         LinearLayout colorRow = new LinearLayout(context);
         colorRow.setOrientation(LinearLayout.HORIZONTAL);
-        String[] names = {"None", "Red", "Green", "Blue"};
-        int[] vals = {0, RED, GREEN, BLUE};
-        final Button[] colorBtns = new Button[4];
-        for (int i = 0; i < 4; i++) {
+        String[] names = {"None", "Red", "Green", "Blue", "Yellow", "Purple"};
+        int[] vals = {0, RED, GREEN, BLUE, YELLOW, PURPLE};
+        final Button[] colorBtns = new Button[6];
+        for (int i = 0; i < 6; i++) {
             final int val = vals[i];
-            Button cb = styledButton(names[i], "#37474F");
+            Button cb = styledButton(names[i], "#30363D");
             colorBtns[i] = cb;
             cb.setOnClickListener(v -> {
                 guard[0] = val;
-                for (int j = 0; j < 4; j++) {
-                    boolean selected = vals[j] == guard[0];
-                    colorBtns[j].setAlpha(selected ? 1f : 0.45f);
-                }
+                for (int j = 0; j < 6; j++)
+                    colorBtns[j].setAlpha(vals[j] == guard[0] ? 1f : 0.4f);
             });
             LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-            clp.setMargins(dp(3), 0, dp(3), 0);
+            clp.setMargins(dp(2), 0, dp(2), 0);
             colorRow.addView(cb, clp);
         }
         box.addView(colorRow);
-        for (int j = 0; j < 4; j++) {
-            colorBtns[j].setAlpha(vals[j] == guard[0] ? 1f : 0.45f);
-        }
+        for (int j = 0; j < 6; j++)
+            colorBtns[j].setAlpha(vals[j] == guard[0] ? 1f : 0.4f);
 
         TextView cTitle = new TextView(context);
         cTitle.setText("2. Command:");
         cTitle.setTextSize(12);
-        cTitle.setPadding(0, dp(10), 0, dp(2));
+        cTitle.setPadding(0, dp(8), 0, dp(2));
         box.addView(cTitle);
 
         LinearLayout moveRow = new LinearLayout(context);
         moveRow.setOrientation(LinearLayout.HORIZONTAL);
         for (int d = 0; d < 4; d++) {
             final int dir = d;
-            Button mb = styledButton(ARROW[d], "#00695C");
+            Button mb = styledButton(ARROW[d], "#1F6FEB");
             mb.setOnClickListener(v -> {
                 Cmd c = new Cmd();
                 c.dir = dir;
@@ -422,45 +432,55 @@ public class AlgoPuzzleDialog {
                 refreshSlots();
                 holder[0].dismiss();
             });
-            LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(0, dp(44), 1f);
-            mlp.setMargins(dp(3), 0, dp(3), 0);
+            LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(0, dp(40), 1f);
+            mlp.setMargins(dp(2), 0, dp(2), 0);
             moveRow.addView(mb, mlp);
         }
         box.addView(moveRow);
 
+        LinearLayout specialRow = new LinearLayout(context);
+        specialRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button tlBtn = styledButton("TL", "#B08800");
+        tlBtn.setOnClickListener(v -> {
+            Cmd c = new Cmd(); c.isTurnLeft = true; c.guard = guard[0];
+            arr[index] = c; refreshSlots(); holder[0].dismiss();
+        });
+        Button trBtn = styledButton("TR", "#B08800");
+        trBtn.setOnClickListener(v -> {
+            Cmd c = new Cmd(); c.isTurnRight = true; c.guard = guard[0];
+            arr[index] = c; refreshSlots(); holder[0].dismiss();
+        });
+        Button jpBtn = styledButton("JP", "#8957E5");
+        jpBtn.setOnClickListener(v -> {
+            Cmd c = new Cmd(); c.isJump = true; c.guard = guard[0];
+            arr[index] = c; refreshSlots(); holder[0].dismiss();
+        });
+        Button clrBtn = styledButton("X", "#DA3633");
+        clrBtn.setOnClickListener(v -> {
+            arr[index] = null; refreshSlots(); holder[0].dismiss();
+        });
+        LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(0, dp(40), 1f);
+        flp.setMargins(dp(2), 0, dp(2), 0);
+        specialRow.addView(tlBtn, flp);
+        specialRow.addView(trBtn, flp);
+        specialRow.addView(jpBtn, flp);
+        specialRow.addView(clrBtn, flp);
+        box.addView(specialRow);
+
         LinearLayout funcRow = new LinearLayout(context);
         funcRow.setOrientation(LinearLayout.HORIZONTAL);
-        Button f1b = styledButton("F1", "#6A1B9A");
+        Button f1b = styledButton("F1", "#8957E5");
         f1b.setOnClickListener(v -> {
-            Cmd c = new Cmd();
-            c.isFunc = true;
-            c.func = 1;
-            c.guard = guard[0];
-            arr[index] = c;
-            refreshSlots();
-            holder[0].dismiss();
+            Cmd c = new Cmd(); c.isFunc = true; c.func = 1; c.guard = guard[0];
+            arr[index] = c; refreshSlots(); holder[0].dismiss();
         });
-        Button f2b = styledButton("F2", "#6A1B9A");
+        Button f2b = styledButton("F2", "#8957E5");
         f2b.setOnClickListener(v -> {
-            Cmd c = new Cmd();
-            c.isFunc = true;
-            c.func = 2;
-            c.guard = guard[0];
-            arr[index] = c;
-            refreshSlots();
-            holder[0].dismiss();
+            Cmd c = new Cmd(); c.isFunc = true; c.func = 2; c.guard = guard[0];
+            arr[index] = c; refreshSlots(); holder[0].dismiss();
         });
-        Button erase = styledButton("Clear", "#C62828");
-        erase.setOnClickListener(v -> {
-            arr[index] = null;
-            refreshSlots();
-            holder[0].dismiss();
-        });
-        LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(0, dp(44), 1f);
-        flp.setMargins(dp(3), 0, dp(3), 0);
         funcRow.addView(f1b, flp);
         funcRow.addView(f2b, flp);
-        funcRow.addView(erase, flp);
         box.addView(funcRow);
 
         AlertDialog dlg = new AlertDialog.Builder(context)
@@ -468,6 +488,9 @@ public class AlgoPuzzleDialog {
             .setView(box)
             .setNegativeButton("Cancel", null)
             .create();
+        dlg.getWindow().setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE);
         holder[0] = dlg;
         dlg.show();
     }
@@ -475,16 +498,8 @@ public class AlgoPuzzleDialog {
     private void startRun() {
         if (running) return;
         boolean empty = true;
-        for (Cmd c : f1) {
-            if (c != null) {
-                empty = false;
-                break;
-            }
-        }
-        if (empty) {
-            msgView.setText("F1 is empty! Add commands first.");
-            return;
-        }
+        for (Cmd c : f1) { if (c != null) { empty = false; break; } }
+        if (empty) { msgView.setText("F1 is empty!"); return; }
         stepsUsed = 0;
         running = true;
         resetBotPosition();
@@ -496,88 +511,69 @@ public class AlgoPuzzleDialog {
 
     private void step() {
         if (!running) return;
-
-        if (frames.isEmpty()) {
-            fail("Program ended before collecting all targets.");
-            return;
-        }
+        if (frames.isEmpty()) { fail("Program ended - targets not collected."); return; }
         int[] frame = frames.peek();
         Cmd[] fn = frame[0] == 1 ? f1 : f2;
-        if (frame[1] >= fn.length) {
-            frames.pop();
-            handler.postDelayed(this::step, STEP_MS);
-            return;
-        }
+        if (frame[1] >= fn.length) { frames.pop(); handler.postDelayed(this::step, STEP_MS); return; }
         Cmd c = fn[frame[1]];
         frame[1]++;
         stepsUsed++;
 
-        if (c == null) {
+        if (c == null) { handler.postDelayed(this::step, STEP_MS); return; }
+        if (stepsUsed > MAX_STEPS) { fail("Step limit exceeded! Optimize."); return; }
+        if (c.isFunc) {
+            if (frames.size() >= 25) { fail("Stack overflow!"); return; }
+            frames.push(new int[]{c.func, 0});
             handler.postDelayed(this::step, STEP_MS);
             return;
         }
-        if (stepsUsed > MAX_STEPS) {
-            fail("Too many steps! Make your loop tighter.");
-            return;
-        }
-        if (c.isFunc) {
-            if (frames.size() >= 20) {
-                fail("Too many nested calls!");
-                return;
+
+        if (c.isTurnLeft) { botDir = (botDir + 3) % 4; board.invalidate(); handler.postDelayed(this::step, STEP_MS); return; }
+        if (c.isTurnRight) { botDir = (botDir + 1) % 4; board.invalidate(); handler.postDelayed(this::step, STEP_MS); return; }
+        if (c.isJump) {
+            int nx = botX + DX[botDir] * 2;
+            int ny = botY + DY[botDir] * 2;
+            if (nx < 0 || ny < 0 || nx >= W || ny >= H || cells[ny][nx] == VOID) {
+                fail("Jump crash!"); return;
             }
-            frames.push(new int[]{c.func, 0});
+            botX = nx; botY = ny;
+            if (goals[ny][nx] && !collected[ny][nx]) { collected[ny][nx] = true; goalsCollected++; }
+            board.invalidate();
+            if (goalsCollected >= goalsTotal) { win(); return; }
             handler.postDelayed(this::step, STEP_MS);
             return;
         }
 
         if (c.guard != 0) {
             int tileColor = cells[botY][botX];
-            if (tileColor != c.guard) {
-                handler.postDelayed(this::step, STEP_MS);
-                return;
-            }
+            if (tileColor != c.guard) { handler.postDelayed(this::step, STEP_MS); return; }
         }
 
         int nx = botX + DX[c.dir];
         int ny = botY + DY[c.dir];
-        if (nx < 0 || ny < 0 || nx >= W || ny >= H || cells[ny][nx] == VOID) {
-            fail("CRASH! The bot fell off the path.");
-            return;
-        }
-
-        botX = nx;
-        botY = ny;
-
-        if (goals[ny][nx] && !collected[ny][nx]) {
-            collected[ny][nx] = true;
-            goalsCollected++;
-        }
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H || cells[ny][nx] == VOID) { fail("CRASH!"); return; }
+        botX = nx; botY = ny; botDir = c.dir;
+        if (goals[ny][nx] && !collected[ny][nx]) { collected[ny][nx] = true; goalsCollected++; }
         board.invalidate();
-
-        if (goalsCollected >= goalsTotal) {
-            win();
-            return;
-        }
+        if (goalsCollected >= goalsTotal) { win(); return; }
         handler.postDelayed(this::step, STEP_MS);
     }
 
     private void win() {
         running = false;
-        msgView.setText("PUZZLE SOLVED! Well programmed!");
-        msgView.setTextColor(Color.parseColor("#66BB6A"));
+        msgView.setText("CHALLENGE COMPLETE!");
+        msgView.setTextColor(Color.parseColor("#3FB950"));
         handler.postDelayed(() -> {
-            if (dialog.isShowing()) {
-                dialog.dismiss();
-            }
+            if (dialog.isShowing()) dialog.dismiss();
             listener.onSolved();
-        }, 1100);
+        }, 900);
     }
 
     private void fail(String reason) {
         running = false;
-        msgView.setText(reason + "\nEdit your program and RUN again.");
-        msgView.setTextColor(Color.parseColor("#EF5350"));
-        handler.postDelayed(this::resetRun, 900);
+        msgView.setText(reason);
+        msgView.setTextColor(Color.parseColor("#F85149"));
+        handler.postDelayed(this::resetRun, 800);
     }
 
     private void stopRun() {
@@ -590,86 +586,64 @@ public class AlgoPuzzleDialog {
         resetBotPosition();
         if (msgView != null) {
             msgView.setTextColor(Color.parseColor("#FFD54F"));
-            msgView.setText(goalsCollected + " / " + goalsTotal
-                + " targets collected.\nEdit slots and press RUN.");
+            msgView.setText(goalsCollected + "/" + goalsTotal + " targets | Steps: 0/" + MAX_STEPS);
         }
     }
 
     private void resetBotPosition() {
-        botX = startX;
-        botY = startY;
+        botX = startX; botY = startY; botDir = startDir;
         collected = new boolean[H][W];
         goalsCollected = 0;
-        if (goals[startY][startX]) {
-            collected[startY][startX] = true;
-            goalsCollected = 1;
-        }
-        if (board != null) {
-            board.invalidate();
-        }
+        if (goals[startY][startX]) { collected[startY][startX] = true; goalsCollected = 1; }
+        if (board != null) board.invalidate();
     }
 
     private class AlgoBoardView extends View {
-
         private final Paint tilePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint goalPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint botPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint ringPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
-        AlgoBoardView(Context ctx) {
-            super(ctx);
-        }
+        AlgoBoardView(Context ctx) { super(ctx); }
 
         @Override
         protected void onDraw(Canvas canvas) {
-            canvas.drawColor(Color.parseColor("#10171D"));
+            canvas.drawColor(Color.parseColor("#0D1117"));
             if (cells == null) return;
-            float viewW = getWidth();
-            float viewH = getHeight();
-            float tile = Math.min(viewW / W, viewH / H) * 0.92f;
+            float viewW = getWidth(), viewH = getHeight();
+            float tile = Math.min(viewW / W, viewH / H) * 0.9f;
             float offX = (viewW - tile * W) / 2f;
             float offY = (viewH - tile * H) / 2f;
 
             for (int y = 0; y < H; y++) {
                 for (int x = 0; x < W; x++) {
                     if (cells[y][x] == VOID) continue;
-                    float left = offX + x * tile + tile * 0.05f;
-                    float top = offY + y * tile + tile * 0.05f;
-                    RectF r = new RectF(left, top, left + tile * 0.9f, top + tile * 0.9f);
+                    float left = offX + x * tile + tile * 0.04f;
+                    float top = offY + y * tile + tile * 0.04f;
+                    RectF r = new RectF(left, top, left + tile * 0.92f, top + tile * 0.92f);
                     switch (cells[y][x]) {
-                        case RED:
-                            tilePaint.setColor(Color.parseColor("#E53935"));
-                            break;
-                        case GREEN:
-                            tilePaint.setColor(Color.parseColor("#43A047"));
-                            break;
-                        default:
-                            tilePaint.setColor(Color.parseColor("#1E88E5"));
+                        case RED: tilePaint.setColor(Color.parseColor("#E53935")); break;
+                        case GREEN: tilePaint.setColor(Color.parseColor("#43A047")); break;
+                        case BLUE: tilePaint.setColor(Color.parseColor("#1E88E5")); break;
+                        case YELLOW: tilePaint.setColor(Color.parseColor("#FDD835")); break;
+                        case PURPLE: tilePaint.setColor(Color.parseColor("#8E24AA")); break;
+                        default: tilePaint.setColor(Color.parseColor("#1E88E5"));
                     }
-                    canvas.drawRoundRect(r, tile * 0.18f, tile * 0.18f, tilePaint);
-
+                    canvas.drawRoundRect(r, tile * 0.15f, tile * 0.15f, tilePaint);
                     if (goals[y][x]) {
-                        if (collected != null && collected[y][x]) {
-                            goalPaint.setColor(Color.parseColor("#FFFFFF"));
-                            goalPaint.setAlpha(70);
-                        } else {
-                            goalPaint.setColor(Color.WHITE);
-                            goalPaint.setAlpha(255);
-                        }
-                        canvas.drawCircle(r.centerX(), r.centerY(), tile * 0.14f, goalPaint);
-                        goalPaint.setAlpha(255);
+                        goalPaint.setColor(collected != null && collected[y][x] ? Color.parseColor("#44FFFFFF") : Color.WHITE);
+                        canvas.drawCircle(r.centerX(), r.centerY(), tile * 0.12f, goalPaint);
                     }
                 }
             }
-
-            float bx = offX + botX * tile + tile * 0.05f;
-            float by = offY + botY * tile + tile * 0.05f;
-            botPaint.setColor(Color.parseColor("#212121"));
-            canvas.drawCircle(bx + tile * 0.45f, by + tile * 0.45f, tile * 0.34f, botPaint);
+            float bx = offX + botX * tile + tile * 0.04f;
+            float by = offY + botY * tile + tile * 0.04f;
+            botPaint.setColor(Color.parseColor("#C9D1D9"));
+            canvas.drawCircle(bx + tile * 0.46f, by + tile * 0.46f, tile * 0.32f, botPaint);
             ringPaint.setStyle(Paint.Style.STROKE);
-            ringPaint.setStrokeWidth(tile * 0.06f);
+            ringPaint.setStrokeWidth(tile * 0.05f);
             ringPaint.setColor(Color.WHITE);
-            canvas.drawCircle(bx + tile * 0.45f, by + tile * 0.45f, tile * 0.34f, ringPaint);
+            canvas.drawCircle(bx + tile * 0.46f, by + tile * 0.46f, tile * 0.32f, ringPaint);
         }
     }
 }
