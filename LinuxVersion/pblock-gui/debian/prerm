@@ -1,4 +1,29 @@
 #!/bin/bash
 set -e
-echo "PBLOCK uninstalled. Hosts file entries may remain."
-echo "To remove manually: sudo sed -i '/# PBLOCK_START/,/# PBLOCK_END/d' /etc/hosts"
+
+CONFIG="/etc/pblock.conf"
+HOSTS="/etc/hosts"
+
+echo "============================================"
+echo "  PBLOCK - Family Safety"
+echo "  Uninstall Protection"
+echo "============================================"
+echo ""
+echo "Disabling PBLOCK content filter..."
+
+# Remove PBLOCK entries from hosts file
+if [ -f "$HOSTS" ]; then
+    cp "$HOSTS" "$HOSTS.pblock_pre_uninstall"
+    sed -i '/# PBLOCK_START/,/# PBLOCK_END/d' "$HOSTS"
+    echo "Content filter removed from hosts file."
+fi
+
+# Remove config
+if [ -f "$CONFIG" ]; then
+    rm -f "$CONFIG"
+    echo "Configuration removed."
+fi
+
+echo ""
+echo "PBLOCK has been deactivated. You may now uninstall."
+echo "Thank you for using PBLOCK - Family Safety."
