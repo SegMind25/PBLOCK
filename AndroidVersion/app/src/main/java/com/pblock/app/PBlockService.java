@@ -38,15 +38,15 @@ public class PBlockService extends Service {
         Notification notification;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             notification = new Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("PBLOCK Active")
-                .setContentText("Content blocking protection is running")
+                .setContentTitle("Family Safety Active")
+                .setContentText("Content filtering protection is running")
                 .setSmallIcon(android.R.drawable.ic_lock_lock)
                 .setOngoing(true)
                 .build();
         } else {
             notification = new Notification.Builder(this)
-                .setContentTitle("PBLOCK Active")
-                .setContentText("Content blocking protection is running")
+                .setContentTitle("Family Safety Active")
+                .setContentText("Content filtering protection is running")
                 .setSmallIcon(android.R.drawable.ic_lock_lock)
                 .setOngoing(true)
                 .build();
@@ -139,10 +139,10 @@ public class PBlockService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
-                "PBLOCK Protection",
+                "Family Safety",
                 NotificationManager.IMPORTANCE_LOW
             );
-            channel.setDescription("Keeps PBLOCK content blocking active");
+            channel.setDescription("Keeps content filtering active");
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) {
                 manager.createNotificationChannel(channel);

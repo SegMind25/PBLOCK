@@ -11,7 +11,7 @@ import android.os.Looper;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
-import android.view.WindowManager;
+
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -307,9 +307,6 @@ public class UltimatePuzzleDialog {
         b.setView(root);
         b.setCancelable(false);
         dialog = b.create();
-        dialog.getWindow().setFlags(
-            WindowManager.LayoutParams.FLAG_SECURE,
-            WindowManager.LayoutParams.FLAG_SECURE);
         dialog.show();
     }
 
@@ -488,9 +485,6 @@ public class UltimatePuzzleDialog {
             .setView(box)
             .setNegativeButton("Cancel", null)
             .create();
-        dlg.getWindow().setFlags(
-            WindowManager.LayoutParams.FLAG_SECURE,
-            WindowManager.LayoutParams.FLAG_SECURE);
         holder[0] = dlg;
         dlg.show();
     }

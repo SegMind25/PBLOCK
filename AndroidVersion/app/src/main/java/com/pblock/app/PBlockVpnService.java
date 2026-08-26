@@ -34,7 +34,7 @@ public class PBlockVpnService extends VpnService {
     private static final String UPSTREAM_DNS_V4 = "8.8.8.8";
     private static final String GOOGLE_SAFESEARCH_IP = "216.239.38.120";
     private static final String BING_STRICT_IP = "204.79.197.220";
-    private static final int MTU = 32767;
+    private static final int MTU = 1500;
     private static final int QTYPE_A = 1;
 
     private static final AtomicBoolean running = new AtomicBoolean(false);
@@ -61,9 +61,9 @@ public class PBlockVpnService extends VpnService {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                 VPN_CHANNEL_ID,
-                "VPN Blocking",
+                "Family Safety",
                 NotificationManager.IMPORTANCE_LOW);
-            channel.setDescription("Shows while content blocking is active");
+            channel.setDescription("Shows while content filtering is active");
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) {
                 manager.createNotificationChannel(channel);
@@ -76,15 +76,15 @@ public class PBlockVpnService extends VpnService {
         Notification notification;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             notification = new Notification.Builder(this, VPN_CHANNEL_ID)
-                .setContentTitle("PBLOCK Active")
-                .setContentText("Content blocking is protecting this phone")
+                .setContentTitle("Family Safety Active")
+                .setContentText("Content filtering is protecting this device")
                 .setSmallIcon(android.R.drawable.ic_lock_lock)
                 .setOngoing(true)
                 .build();
         } else {
             notification = new Notification.Builder(this)
-                .setContentTitle("PBLOCK Active")
-                .setContentText("Content blocking is protecting this phone")
+                .setContentTitle("Family Safety Active")
+                .setContentText("Content filtering is protecting this device")
                 .setSmallIcon(android.R.drawable.ic_lock_lock)
                 .setOngoing(true)
                 .build();
@@ -281,13 +281,13 @@ public class PBlockVpnService extends VpnService {
         DatagramSocket socket = null;
         try {
             socket = new DatagramSocket();
-            socket.setSoTimeout(5000);
+            socket.setSoTimeout(3000);
             protect(socket);
 
             InetAddress addr = InetAddress.getByName(UPSTREAM_DNS_V4);
             socket.send(new DatagramPacket(dnsQuery, dnsQuery.length, addr, 53));
 
-            byte[] buf = new byte[4096];
+            byte[] buf = new byte[2048];
             DatagramPacket response = new DatagramPacket(buf, buf.length);
             try {
                 socket.receive(response);
@@ -296,7 +296,6 @@ public class PBlockVpnService extends VpnService {
             }
             return Arrays.copyOf(response.getData(), response.getLength());
         } catch (Exception e) {
-            Log.w(TAG, "Forward error: " + e.getMessage());
             return null;
         } finally {
             if (socket != null && !socket.isClosed()) {

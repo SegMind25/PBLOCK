@@ -1,0 +1,24 @@
+PBLOCK - Family Safety Content Filter
+
+PBLOCK is a parental control and self-accountability tool designed to help families maintain a safe online environment. It blocks access to adult content by modifying DNS settings on your device.
+
+Key Features:
+• Blocks 200+ adult websites at the DNS level
+• Forces SafeSearch on Google, Bing, and YouTube
+• Works on both rooted and non-rooted devices
+• Password-protected settings to prevent unauthorized changes
+• Survives device reboots for continuous protection
+• Two modes: Root DNS modification or VPN-based DNS filtering
+• Device protection to prevent uninstallation
+
+How It Works:
+PBLOCK operates by intercepting DNS requests and blocking known adult domains. On rooted devices, it modifies the system hosts file directly. On non-rooted devices, it uses a local VPN to filter DNS queries.
+
+Perfect For:
+• Parents who want to protect their children from inappropriate content
+• Individuals seeking self-accountability tools
+• Families looking for an open-source content filtering solution
+
+This app requires device administrator privileges to prevent uninstallation. You can deactivate protection through the app's built-in puzzle challenge system.
+
+Open Source: PBLOCK is free and open source. View the source code on GitHub.
