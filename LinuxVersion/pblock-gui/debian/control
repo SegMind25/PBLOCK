@@ -1,0 +1,23 @@
+Package: pblock
+Version: VERSION
+Section: net
+Priority: optional
+Architecture: amd64
+Depends: libgtk-3-0
+Recommends: sudo
+Installed-Size: 512
+Maintainer: Bekkali <segmind25@github.com>
+Homepage: https://github.com/SegMind25/PBLOCK
+Description: PBLOCK - Family Safety Content Filter
+ An open-source parental control and self-accountability tool
+ that blocks adult content by modifying the system hosts file.
+ .
+ Features:
+  - Blocks 200+ adult websites
+  - Forces SafeSearch on Google and Bing
+  - Password-protected settings
+  - 10-puzzle challenge to disable blocking
+  - Survives system reboot
+ .
+ This app requires root privileges to modify /etc/hosts.
+ Run with: sudo pblock

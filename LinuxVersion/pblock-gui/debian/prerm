@@ -1,0 +1,4 @@
+#!/bin/bash
+set -e
+echo "PBLOCK uninstalled. Hosts file entries may remain."
+echo "To remove manually: sudo sed -i '/# PBLOCK_START/,/# PBLOCK_END/d' /etc/hosts"

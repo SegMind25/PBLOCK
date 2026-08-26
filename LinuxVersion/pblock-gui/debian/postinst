@@ -1,0 +1,10 @@
+#!/bin/bash
+set -e
+echo "PBLOCK - Family Safety Content Filter"
+echo "Installed successfully!"
+echo ""
+echo "Usage:"
+echo "  sudo pblock        - Launch GUI"
+echo "  sudo pblock block   - Enable blocking"
+echo "  sudo pblock unblock - Disable blocking"
+echo "  sudo pblock status  - Show status"

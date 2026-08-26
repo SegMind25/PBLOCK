@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=PBLOCK
+GenericName=Family Safety Content Filter
+Comment=Block adult content and enforce SafeSearch
+Exec=sudo pblock
+Icon=pblock
+Terminal=true
+Categories=Network;Security;Utility;
+Keywords=parental;control;blocker;safesearch;content;filter;
