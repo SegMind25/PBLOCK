@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#1565C0</color>
+    <color name="colorPrimaryDark">#0D47A1</color>
+    <color name="colorAccent">#FF6D00</color>
+
+    <color name="ic_launcher_background">#1565C0</color>
+
+    <color name="btnSetup">#1976D2</color>
+    <color name="btnBlock">#2E7D32</color>
+    <color name="btnUnblock">#EF6C00</color>
+    <color name="btnAdmin">#C62828</color>
+    <color name="btnStatus">#546E7A</color>
+    <color name="btnVpn">#00695C</color>
+
+    <color name="textMain">#1F2937</color>
+    <color name="textSub">#6B7280</color>
+    <color name="screenBg">#EEF2F7</color>
+    <color name="cardStroke">#D0D7DE</color>
+</resources>

@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:background="@color/screenBg">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="24dp"
+        android:gravity="center">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/copyright"
+            android:textSize="12sp"
+            android:textStyle="italic"
+            android:textColor="@color/textSub"
+            android:layout_marginBottom="6dp" />
+
+        <FrameLayout
+            android:layout_width="96dp"
+            android:layout_height="96dp"
+            android:background="@drawable/bg_header_circle"
+            android:elevation="4dp">
+
+            <ImageView
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:layout_gravity="center"
+                android:contentDescription="@string/app_name"
+                android:src="@drawable/ic_shield_white" />
+        </FrameLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:textColor="@color/textMain"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/app_subtitle"
+            android:textSize="14sp"
+            android:textColor="@color/textSub"
+            android:layout_marginBottom="20dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_card"
+            android:elevation="2dp"
+            android:layout_marginBottom="20dp">
+
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/loading"
+                android:textSize="15sp"
+                android:textColor="@color/textMain"
+                android:fontFamily="monospace"
+                android:padding="16dp" />
+        </LinearLayout>
+
+        <EditText
+            android:id="@+id/passwordInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/password_hint"
+            android:inputType="textPassword"
+            android:background="@drawable/bg_edittext"
+            android:padding="14dp"
+            android:textColor="@color/textMain"
+            android:layout_marginBottom="16dp" />
+
+        <Button
+            android:id="@+id/setupButton"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="@string/btn_set_password"
+            android:textColor="#FFFFFF"
+            android:textAllCaps="false"
+            android:backgroundTint="@color/btnSetup"
+            android:drawableStart="@drawable/ic_key_white"
+            android:drawablePadding="12dp"
+            android:paddingStart="28dp"
+            android:paddingEnd="28dp"
+            android:layout_marginBottom="10dp" />
+
+        <Button
+            android:id="@+id/blockButton"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="@string/btn_block_root"
+            android:textColor="#FFFFFF"
+            android:textAllCaps="false"
+            android:backgroundTint="@color/btnBlock"
+            android:drawableStart="@drawable/ic_block_white"
+            android:drawablePadding="12dp"
+            android:paddingStart="28dp"
+            android:paddingEnd="28dp"
+            android:layout_marginBottom="10dp"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/unblockButton"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="@string/btn_unblock_root"
+            android:textColor="#FFFFFF"
+            android:textAllCaps="false"
+            android:backgroundTint="@color/btnUnblock"
+            android:drawableStart="@drawable/ic_unlock_white"
+            android:drawablePadding="12dp"
+            android:paddingStart="28dp"
+            android:paddingEnd="28dp"
+            android:layout_marginBottom="10dp"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/consoleButton"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="@string/btn_console"
+            android:textColor="#FFFFFF"
+            android:textAllCaps="false"
+            android:backgroundTint="#21262D"
+            android:drawableStart="@drawable/ic_info_white"
+            android:drawablePadding="12dp"
+            android:paddingStart="28dp"
+            android:paddingEnd="28dp"
+            android:layout_marginBottom="10dp"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/vpnButton"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="@string/btn_vpn_enable"
+            android:textColor="#FFFFFF"
+            android:textAllCaps="false"
+            android:backgroundTint="@color/btnVpn"
+            android:drawableStart="@drawable/ic_shield_white"
+            android:drawablePadding="12dp"
+            android:paddingStart="28dp"
+            android:paddingEnd="28dp"
+            android:layout_marginBottom="10dp" />
+
+        <Button
+            android:id="@+id/deviceAdminButton"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="@string/btn_device_admin"
+            android:textColor="#FFFFFF"
+            android:textAllCaps="false"
+            android:backgroundTint="@color/btnAdmin"
+            android:drawableStart="@drawable/ic_admin_white"
+            android:drawablePadding="12dp"
+            android:paddingStart="28dp"
+            android:paddingEnd="28dp"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/deviceAdminWarning"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/device_admin_warning"
+            android:textSize="12sp"
+            android:textColor="@color/btnAdmin"
+            android:padding="8dp"
+            android:layout_marginBottom="8dp"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/statusButton"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="@string/btn_status"
+            android:textColor="#FFFFFF"
+            android:textAllCaps="false"
+            android:backgroundTint="@color/btnStatus"
+            android:drawableStart="@drawable/ic_refresh_white"
+            android:drawablePadding="12dp"
+            android:paddingStart="28dp"
+            android:paddingEnd="28dp" />
+
+    </LinearLayout>
+</ScrollView>
