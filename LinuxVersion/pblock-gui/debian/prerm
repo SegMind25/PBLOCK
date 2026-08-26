@@ -1,29 +1,129 @@
 #!/bin/bash
-set -e
+# PBLOCK - Aggressive Uninstall Protection
+# Must solve 10 puzzle challenges before uninstall is allowed
 
 CONFIG="/etc/pblock.conf"
 HOSTS="/etc/hosts"
+MARKER="/tmp/.pblock_uninstall_ok"
+APP="/usr/bin/pblock"
 
-echo "============================================"
-echo "  PBLOCK - Family Safety"
-echo "  Uninstall Protection"
-echo "============================================"
 echo ""
-echo "Disabling PBLOCK content filter..."
+echo "╔══════════════════════════════════════════════════════╗"
+echo "║         PBLOCK - UNINSTALL PROTECTION               ║"
+echo "║                                                      ║"
+echo "║  You CANNOT uninstall PBLOCK without solving         ║"
+echo "║  10 algorithm puzzles first.                         ║"
+echo "║                                                      ║"
+echo "║  This is by design — to prevent impulsive            ║"
+echo "║  decisions to disable your content protection.       ║"
+echo "╚══════════════════════════════════════════════════════╝"
+echo ""
 
-# Remove PBLOCK entries from hosts file
+# Remove any previous marker
+rm -f "$MARKER"
+
+# Check if PBLOCK is actively blocking content
+BLOCKING=false
+if [ -f "$HOSTS" ] && grep -q "# PBLOCK_START" "$HOSTS" 2>/dev/null; then
+    BLOCKING=true
+fi
+
+if [ "$BLOCKING" = true ]; then
+    echo "Content filter is ACTIVE. Puzzle challenge required."
+    echo ""
+
+    # Try to launch the GUI in uninstall mode
+    if [ -x "$APP" ]; then
+        # Try with display
+        if [ -n "$DISPLAY" ] || [ -n "$WAYLAND_DISPLAY" ]; then
+            echo "Launching puzzle challenge window..."
+            echo "Solve all 10 puzzles to proceed with uninstall."
+            echo ""
+
+            # Launch in background and wait for marker
+            "$APP" --uninstall &
+            APP_PID=$!
+
+            # Wait for the app to complete (marker file created) or user kills it
+            TIMEOUT=300  # 5 minutes max
+            ELAPSED=0
+            while [ $ELAPSED -lt $TIMEOUT ]; do
+                if [ -f "$MARKER" ]; then
+                    echo ""
+                    echo "Puzzle challenges completed! Proceeding with uninstall..."
+                    kill $APP_PID 2>/dev/null
+                    wait $APP_PID 2>/dev/null
+                    rm -f "$MARKER"
+                    break
+                fi
+
+                # Check if app was closed without completing
+                if ! kill -0 $APP_PID 2>/dev/null; then
+                    echo ""
+                    echo "╔══════════════════════════════════════════════════════╗"
+                    echo "║  UNINSTALL DENIED!                                  ║"
+                    echo "║                                                      ║"
+                    echo "║  You closed the puzzle window without completing.   ║"
+                    echo "║  PBLOCK remains active. Content is still blocked.   ║"
+                    echo "║                                                      ║"
+                    echo "║  To uninstall, you MUST solve all 10 puzzles.       ║"
+                    echo "║  Run: sudo dpkg --remove pblock-gui                 ║"
+                    echo "╚══════════════════════════════════════════════════════╝"
+                    echo ""
+                    # DO NOT proceed with uninstall
+                    exit 1
+                fi
+
+                sleep 1
+                ELAPSED=$((ELAPSED + 1))
+            done
+
+            # If timed out
+            if [ $ELAPSED -ge $TIMEOUT ] && [ ! -f "$MARKER" ]; then
+                kill $APP_PID 2>/dev/null
+                echo ""
+                echo "╔══════════════════════════════════════════════════════╗"
+                echo "║  UNINSTALL DENIED!                                  ║"
+                echo "║                                                      ║"
+                echo "║  Timed out waiting for puzzle completion.           ║"
+                echo "║  PBLOCK remains fully active.                       ║"
+                echo "╚══════════════════════════════════════════════════════╝"
+                echo ""
+                exit 1
+            fi
+        else
+            # No display available - cannot show GUI
+            echo "╔══════════════════════════════════════════════════════╗"
+            echo "║  UNINSTALL DENIED!                                  ║"
+            echo "║                                                      ║"
+            echo "║  No display detected. Puzzle challenge requires     ║"
+            echo "║  a graphical environment.                           ║"
+            echo "║                                                      ║"
+            echo "║  Options:                                           ║"
+            echo "║  1. Run this from a desktop session                 ║"
+            echo "║  2. Disable content filter first:                   ║"
+            echo "║     sudo pblock  (then disable in GUI)              ║"
+            echo "╚══════════════════════════════════════════════════════╝"
+            echo ""
+            exit 1
+        fi
+    else
+        echo "ERROR: PBLOCK binary not found at $APP"
+        echo "Cannot verify puzzle challenge. Uninstall blocked."
+        exit 1
+    fi
+else
+    echo "Content filter not active. Proceeding with uninstall..."
+fi
+
+# Cleanup
+echo "Cleaning up PBLOCK..."
 if [ -f "$HOSTS" ]; then
-    cp "$HOSTS" "$HOSTS.pblock_pre_uninstall"
-    sed -i '/# PBLOCK_START/,/# PBLOCK_END/d' "$HOSTS"
-    echo "Content filter removed from hosts file."
+    sed -i '/# PBLOCK_START/,/# PBLOCK_END/d' "$HOSTS" 2>/dev/null
 fi
-
-# Remove config
-if [ -f "$CONFIG" ]; then
-    rm -f "$CONFIG"
-    echo "Configuration removed."
-fi
+rm -f "$CONFIG" "$MARKER"
+systemd-resolve --flush-caches 2>/dev/null || nscd -i hosts 2>/dev/null || true
 
 echo ""
-echo "PBLOCK has been deactivated. You may now uninstall."
+echo "PBLOCK has been deactivated and removed."
 echo "Thank you for using PBLOCK - Family Safety."

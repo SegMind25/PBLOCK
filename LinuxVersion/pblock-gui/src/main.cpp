@@ -202,6 +202,7 @@ struct AppWidgets {
 };
 
 static AppWidgets* g_app = nullptr;
+static bool g_uninstallMode = false;
 
 static int countCells(Puzzle& p) {
     int n = 0;
@@ -433,6 +434,20 @@ static void runStep(AppWidgets* w) {
             w->puzzle_current++;
             if (w->puzzle_current >= TOTAL_PUZZLES) {
                 gtk_label_set_markup(GTK_LABEL(w->puzzle_msg), "<span foreground='#2ED573' weight='bold'>ALL 10 CHALLENGES SOLVED!</span>");
+                if (g_uninstallMode) {
+                    std::ofstream marker("/tmp/.pblock_uninstall_ok");
+                    marker << "ok" << std::endl;
+                    marker.close();
+                    g_timeout_add(2000, [](gpointer) -> gboolean {
+                        GtkWidget* dlg = gtk_message_dialog_new(GTK_WINDOW(g_app->window),
+                            GTK_DIALOG_MODAL, GTK_MESSAGE_INFO, GTK_BUTTONS_OK,
+                            "Puzzle challenges completed!\n\nYou may now uninstall PBLOCK.\nThe package manager will now proceed.");
+                        gtk_dialog_run(GTK_DIALOG(dlg));
+                        gtk_widget_destroy(dlg);
+                        gtk_main_quit();
+                        return FALSE;
+                    }, NULL);
+                }
             } else {
                 g_timeout_add(1500, [](gpointer) -> gboolean {
                     generatePuzzle(g_app->puzzle, g_app->rng, g_app->puzzle_current);
@@ -467,6 +482,20 @@ static void runStep(AppWidgets* w) {
         w->puzzle_current++;
         if (w->puzzle_current >= TOTAL_PUZZLES) {
             gtk_label_set_markup(GTK_LABEL(w->puzzle_msg), "<span foreground='#2ED573' weight='bold'>ALL 10 CHALLENGES SOLVED!</span>");
+            if (g_uninstallMode) {
+                std::ofstream marker("/tmp/.pblock_uninstall_ok");
+                marker << "ok" << std::endl;
+                marker.close();
+                g_timeout_add(2000, [](gpointer) -> gboolean {
+                    GtkWidget* dlg = gtk_message_dialog_new(GTK_WINDOW(g_app->window),
+                        GTK_DIALOG_MODAL, GTK_MESSAGE_INFO, GTK_BUTTONS_OK,
+                        "Puzzle challenges completed!\n\nYou may now uninstall PBLOCK.\nThe package manager will now proceed.");
+                    gtk_dialog_run(GTK_DIALOG(dlg));
+                    gtk_widget_destroy(dlg);
+                    gtk_main_quit();
+                    return FALSE;
+                }, NULL);
+            }
         } else {
             g_timeout_add(1500, [](gpointer) -> gboolean {
                 generatePuzzle(g_app->puzzle, g_app->rng, g_app->puzzle_current);
@@ -557,7 +586,19 @@ static void onDisable(GtkWidget*, AppWidgets* w) {
     gtk_stack_set_visible_child_name(GTK_STACK(w->stack), "puzzle");
 }
 
-static void onPuzzleBack(GtkWidget*, AppWidgets* w) { gtk_stack_set_visible_child_name(GTK_STACK(w->stack), "status"); updateStatus(w); }
+static void onPuzzleBack(GtkWidget*, AppWidgets* w) {
+    if (g_uninstallMode) {
+        // Cannot go back during uninstall — must solve all puzzles
+        GtkWidget* dlg = gtk_message_dialog_new(GTK_WINDOW(w->window),
+            GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING, GTK_BUTTONS_OK,
+            "UNINSTALL BLOCKED!\n\nYou must solve all 10 puzzles to uninstall PBLOCK.\nThere is no way around this protection.");
+        gtk_dialog_run(GTK_DIALOG(dlg));
+        gtk_widget_destroy(dlg);
+        return;
+    }
+    gtk_stack_set_visible_child_name(GTK_STACK(w->stack), "status");
+    updateStatus(w);
+}
 static void onSettings(GtkWidget*, AppWidgets* w) { gtk_stack_set_visible_child_name(GTK_STACK(w->stack), "password"); }
 static void onPwBack(GtkWidget*, AppWidgets* w) { gtk_stack_set_visible_child_name(GTK_STACK(w->stack), "status"); }
 
@@ -692,6 +733,14 @@ static const char* CSS = "window { background-color: #0F0F23; }"
 int main(int argc, char* argv[]) {
     if (geteuid() != 0) { fprintf(stderr, "Must be run as root: sudo pblock\n"); return 1; }
 
+    // Check for --uninstall flag
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--uninstall") == 0) {
+            g_uninstallMode = true;
+            break;
+        }
+    }
+
     gtk_init(&argc, &argv);
     GtkCssProvider* css = gtk_css_provider_new();
     gtk_css_provider_load_from_data(css, CSS, -1, NULL);
@@ -716,8 +765,24 @@ int main(int argc, char* argv[]) {
     gtk_stack_add_named(GTK_STACK(g_app->stack), createPasswordPage(g_app), "password");
     gtk_stack_add_named(GTK_STACK(g_app->stack), createPuzzlePage(g_app), "puzzle");
 
-    gtk_stack_set_visible_child_name(GTK_STACK(g_app->stack), "status");
-    updateStatus(g_app);
+    if (g_uninstallMode) {
+        // Force into puzzle mode — no way back
+        generatePuzzle(g_app->puzzle, g_app->rng, 0);
+        for (int i = 0; i < SLOTS; i++) g_app->f1[i] = Cmd();
+        for (int i = 0; i < SLOTS; i++) g_app->f2[i] = Cmd();
+        g_app->puzzle.resetBot();
+        refreshSlotButtons(g_app);
+        char buf[128]; snprintf(buf, sizeof(buf), "Challenge 1 / %d (UNINSTALL GATE)", TOTAL_PUZZLES);
+        gtk_label_set_text(GTK_LABEL(g_app->puzzle_progress_label), buf);
+        gtk_label_set_markup(GTK_LABEL(g_app->puzzle_msg),
+            "<span foreground='#FF4757' weight='bold'>UNINSTALL PROTECTION ACTIVE</span>\n"
+            "<span foreground='#FFD93D'>Solve all 10 puzzles to allow uninstall.\nThere is NO shortcut or bypass.</span>");
+        gtk_widget_hide(g_app->puzzle_back_btn);
+        gtk_stack_set_visible_child_name(GTK_STACK(g_app->stack), "puzzle");
+    } else {
+        gtk_stack_set_visible_child_name(GTK_STACK(g_app->stack), "status");
+        updateStatus(g_app);
+    }
 
     gtk_widget_show_all(g_app->window);
     gtk_main();
