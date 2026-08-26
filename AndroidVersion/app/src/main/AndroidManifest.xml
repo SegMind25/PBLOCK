@@ -33,6 +33,15 @@
             android:label="Root Console"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <activity
+            android:name=".UninstallProtectionActivity"
+            android:exported="false"
+            android:label="Uninstall Protection"
+            android:theme="@style/UninstallProtectionTheme"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:excludeFromRecents="true"
+            android:noHistory="true" />
+
         <receiver
             android:name=".PBlockDeviceAdminReceiver"
             android:exported="true"

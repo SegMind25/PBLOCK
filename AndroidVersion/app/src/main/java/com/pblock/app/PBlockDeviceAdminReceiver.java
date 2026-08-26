@@ -70,8 +70,15 @@ public class PBlockDeviceAdminReceiver extends DeviceAdminReceiver {
 
     @Override
     public CharSequence onDisableRequested(Context context, Intent intent) {
-        return "WARNING: Disabling Device Admin will allow PBLOCK to be uninstalled. "
-            + "Content blocking protection will be removed.\n\n"
-            + "You must solve the puzzle challenges first to deactivate Device Admin.";
+        // Launch the puzzle protection activity
+        Intent protectIntent = new Intent(context, UninstallProtectionActivity.class);
+        protectIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        protectIntent.addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
+        protectIntent.addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY);
+        context.startActivity(protectIntent);
+
+        return "WARNING: To deactivate Device Admin, you must solve all 10 algorithm puzzles.\n\n"
+            + "Content blocking protection will remain active until all challenges are completed.\n\n"
+            + "The puzzle challenge has been launched.";
     }
 }
