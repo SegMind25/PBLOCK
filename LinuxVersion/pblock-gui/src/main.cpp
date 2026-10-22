@@ -19,6 +19,8 @@ static const int TOTAL_PUZZLES = 10;
 static const int SLOTS = 12;
 static const int MAX_STEPS = 50;
 static const int STEP_MS = 180;
+// Root-only location (not world-writable /tmp) so other users cannot forge or symlink it
+static const char* UNINSTALL_MARKER = "/run/pblock_uninstall_ok";
 
 static const int VOID = 0, RED = 1, GREEN = 2, BLUE = 3, YELLOW_C = 4, PURPLE = 5;
 static const int DX[] = {0, 0, -1, 1};
@@ -136,9 +138,10 @@ static std::vector<std::string> blocked_search_engines = {
 static const unsigned int TILE_COLORS[] = {0, 0xFF4757FFu, 0x2ED573FFu, 0x3742FAFFu, 0xFFA502FFu, 0xA855F7FFu};
 
 struct Cmd {
-    bool isFunc = false;
+    bool isFunc = false, isMove = false;
     int func = 0, dir = 0, guard = 0;
     bool isTurnLeft = false, isTurnRight = false, isJump = false;
+    bool empty() const { return !isFunc && !isMove && !isTurnLeft && !isTurnRight && !isJump; }
     std::string label() const {
         if (isTurnLeft) return "\u21BA";
         if (isTurnRight) return "\u21BB";
@@ -199,6 +202,8 @@ struct AppWidgets {
     std::mt19937 rng;
     Cmd* current_slot_arr = nullptr;
     int current_slot_idx = 0;
+    int pc = 0, step_count = 0;
+    guint run_timer = 0;
 };
 
 static AppWidgets* g_app = nullptr;
@@ -252,7 +257,9 @@ static void generatePuzzle(Puzzle& p, std::mt19937& rng, int idx) {
         for (int y = 0; y < p.H; y++)
             for (int x = 0; x < p.W; x++)
                 if (!p.goals[y][x] && p.cells[y][x] != VOID && rng() % 3 == 0) { p.goals[y][x] = true; p.goalsTotal++; }
-        if (p.goalsTotal < 4) p.goalsTotal = 4;
+        for (int y = 0; y < p.H && p.goalsTotal < 4; y++)
+            for (int x = 0; x < p.W && p.goalsTotal < 4; x++)
+                if (!p.goals[y][x] && p.cells[y][x] != VOID) { p.goals[y][x] = true; p.goalsTotal++; }
         return;
     }
     p.W = 9; p.H = 7;
@@ -365,8 +372,9 @@ static void refreshSlotButtons(AppWidgets* w) {
     for (int i = 0; i < SLOTS; i++) {
         for (int f = 0; f < 2; f++) {
             GtkWidget* btn = f == 0 ? w->f1_btns[i] : w->f2_btns[i];
+            if (!btn) continue;  // F2 row is not built yet
             Cmd& c = f == 0 ? w->f1[i] : w->f2[i];
-            if (c.isFunc || c.dir || c.guard || c.isTurnLeft || c.isTurnRight || c.isJump) {
+            if (!c.empty()) {
                 gtk_button_set_label(GTK_BUTTON(btn), c.label().c_str());
                 unsigned int clr = c.cmdColor();
                 char css[96];
@@ -394,139 +402,125 @@ static void resetBot(AppWidgets* w) {
 }
 
 static void runStep(AppWidgets* w);
+static void unblockContent(AppWidgets* w);
+static void updateStatus(AppWidgets* w);
 
 static gboolean runStepTimer(gpointer) {
-    if (g_app && g_app->running) runStep(g_app);
+    if (g_app) { g_app->run_timer = 0; if (g_app->running) runStep(g_app); }
     return FALSE;
+}
+
+static void scheduleStep(AppWidgets* w) { w->run_timer = g_timeout_add(STEP_MS, runStepTimer, w); }
+
+static void stopRun(AppWidgets* w) {
+    w->running = false; w->pc = 0; w->step_count = 0;
+    if (w->run_timer) { g_source_remove(w->run_timer); w->run_timer = 0; }
+}
+
+static void stopRunWithMsg(AppWidgets* w, const char* markup) {
+    stopRun(w);
+    gtk_label_set_markup(GTK_LABEL(w->puzzle_msg), markup);
+}
+
+static void loadPuzzle(AppWidgets* w, int idx) {
+    generatePuzzle(w->puzzle, w->rng, idx);
+    for (int i = 0; i < SLOTS; i++) { w->f1[i] = Cmd(); w->f2[i] = Cmd(); }
+    resetBot(w); refreshSlotButtons(w);
+}
+
+static gboolean onAllSolvedUninstall(gpointer) {
+    GtkWidget* dlg = gtk_message_dialog_new(GTK_WINDOW(g_app->window),
+        GTK_DIALOG_MODAL, GTK_MESSAGE_INFO, GTK_BUTTONS_OK,
+        "Puzzle challenges completed!\n\nYou may now uninstall PBLOCK.\nThe package manager will now proceed.");
+    gtk_dialog_run(GTK_DIALOG(dlg));
+    gtk_widget_destroy(dlg);
+    gtk_main_quit();
+    return FALSE;
+}
+
+static gboolean onAllSolvedDisable(gpointer) {
+    unblockContent(g_app);
+    gtk_stack_set_visible_child_name(GTK_STACK(g_app->stack), "status");
+    updateStatus(g_app);
+    return FALSE;
+}
+
+static gboolean onNextPuzzle(gpointer) {
+    loadPuzzle(g_app, g_app->puzzle_current);
+    char buf[128]; snprintf(buf, sizeof(buf), "Challenge %d / %d", g_app->puzzle_current + 1, TOTAL_PUZZLES);
+    gtk_label_set_text(GTK_LABEL(g_app->puzzle_progress_label), buf);
+    gtk_label_set_markup(GTK_LABEL(g_app->puzzle_msg), "<span foreground='#FFD93D'>Program the bot to collect all targets</span>");
+    return FALSE;
+}
+
+static void onPuzzleSolved(AppWidgets* w) {
+    stopRunWithMsg(w, "<span foreground='#2ED573' weight='bold'>CHALLENGE COMPLETE!</span>");
+    w->puzzle_current++;
+    if (w->puzzle_current < TOTAL_PUZZLES) { g_timeout_add(1500, onNextPuzzle, NULL); return; }
+    gtk_label_set_markup(GTK_LABEL(w->puzzle_msg), "<span foreground='#2ED573' weight='bold'>ALL 10 CHALLENGES SOLVED!</span>");
+    if (g_uninstallMode) {
+        std::ofstream marker(UNINSTALL_MARKER);
+        marker << "ok" << std::endl;
+        marker.close();
+        g_timeout_add(2000, onAllSolvedUninstall, NULL);
+    } else {
+        g_timeout_add(1500, onAllSolvedDisable, NULL);
+    }
+}
+
+// Moves the bot to (nx, ny); returns false on crash.
+static bool moveBot(AppWidgets* w, int nx, int ny) {
+    Puzzle& p = w->puzzle;
+    if (nx < 0 || ny < 0 || nx >= p.W || ny >= p.H || p.cells[ny][nx] == VOID) return false;
+    p.botX = nx; p.botY = ny;
+    if (p.goals[ny][nx] && !p.collected[ny][nx]) { p.collected[ny][nx] = true; p.goalsCollected++; }
+    gtk_widget_queue_draw(w->board_drawing);
+    return true;
 }
 
 static void runStep(AppWidgets* w) {
     if (!w->running) return;
     Puzzle& p = w->puzzle;
 
-    // Simple interpreter: execute f1 sequentially with basic loop (F1 in F1)
-    static int pc = 0;
-    static int stepCount = 0;
+    // Simple interpreter: execute f1 sequentially
+    while (w->pc < SLOTS && w->f1[w->pc].empty()) w->pc++;
+    if (w->pc >= SLOTS) { stopRunWithMsg(w, "<span foreground='#FF4757'>Program ended - targets not collected</span>"); return; }
 
-    // Find next non-null command
-    while (pc < SLOTS && w->f1[pc].isFunc == false && !w->f1[pc].isTurnLeft && !w->f1[pc].isTurnRight && !w->f1[pc].isJump && w->f1[pc].dir == 0 && w->f1[pc].guard == 0) pc++;
-    if (pc >= SLOTS) { w->running = false; gtk_label_set_markup(GTK_LABEL(w->puzzle_msg), "<span foreground='#FF4757'>Program ended - targets not collected</span>"); return; }
+    if (++w->step_count > MAX_STEPS) { stopRunWithMsg(w, "<span foreground='#FF4757'>Step limit exceeded! Optimize.</span>"); return; }
 
-    stepCount++;
-    if (stepCount > MAX_STEPS) { w->running = false; pc = 0; stepCount = 0; gtk_label_set_markup(GTK_LABEL(w->puzzle_msg), "<span foreground='#FF4757'>Step limit exceeded! Optimize.</span>"); return; }
+    Cmd& cmd = w->f1[w->pc]; w->pc++;
 
-    Cmd& cmd = w->f1[pc]; pc++;
-
-    if (cmd.isTurnLeft) { p.botDir = (p.botDir + 3) % 4; gtk_widget_queue_draw(w->board_drawing); g_timeout_add(STEP_MS, runStepTimer, w); return; }
-    if (cmd.isTurnRight) { p.botDir = (p.botDir + 1) % 4; gtk_widget_queue_draw(w->board_drawing); g_timeout_add(STEP_MS, runStepTimer, w); return; }
+    if (cmd.isTurnLeft) { p.botDir = (p.botDir + 3) % 4; gtk_widget_queue_draw(w->board_drawing); scheduleStep(w); return; }
+    if (cmd.isTurnRight) { p.botDir = (p.botDir + 1) % 4; gtk_widget_queue_draw(w->board_drawing); scheduleStep(w); return; }
     if (cmd.isJump) {
-        int nx = p.botX + DX[p.botDir] * 2, ny = p.botY + DY[p.botDir] * 2;
-        if (nx < 0 || ny < 0 || nx >= p.W || ny >= p.H || p.cells[ny][nx] == VOID) {
-            w->running = false; pc = 0; stepCount = 0;
-            gtk_label_set_markup(GTK_LABEL(w->puzzle_msg), "<span foreground='#FF4757'>Jump crash!</span>"); return;
+        if (!moveBot(w, p.botX + DX[p.botDir] * 2, p.botY + DY[p.botDir] * 2)) {
+            stopRunWithMsg(w, "<span foreground='#FF4757'>Jump crash!</span>"); return;
         }
-        p.botX = nx; p.botY = ny;
-        if (p.goals[ny][nx] && !p.collected[ny][nx]) { p.collected[ny][nx] = true; p.goalsCollected++; }
-        gtk_widget_queue_draw(w->board_drawing);
-        if (p.goalsCollected >= p.goalsTotal) {
-            w->running = false; pc = 0; stepCount = 0;
-            gtk_label_set_markup(GTK_LABEL(w->puzzle_msg), "<span foreground='#2ED573' weight='bold'>CHALLENGE COMPLETE!</span>");
-            w->puzzle_current++;
-            if (w->puzzle_current >= TOTAL_PUZZLES) {
-                gtk_label_set_markup(GTK_LABEL(w->puzzle_msg), "<span foreground='#2ED573' weight='bold'>ALL 10 CHALLENGES SOLVED!</span>");
-                if (g_uninstallMode) {
-                    std::ofstream marker("/tmp/.pblock_uninstall_ok");
-                    marker << "ok" << std::endl;
-                    marker.close();
-                    g_timeout_add(2000, [](gpointer) -> gboolean {
-                        GtkWidget* dlg = gtk_message_dialog_new(GTK_WINDOW(g_app->window),
-                            GTK_DIALOG_MODAL, GTK_MESSAGE_INFO, GTK_BUTTONS_OK,
-                            "Puzzle challenges completed!\n\nYou may now uninstall PBLOCK.\nThe package manager will now proceed.");
-                        gtk_dialog_run(GTK_DIALOG(dlg));
-                        gtk_widget_destroy(dlg);
-                        gtk_main_quit();
-                        return FALSE;
-                    }, NULL);
-                }
-            } else {
-                g_timeout_add(1500, [](gpointer) -> gboolean {
-                    generatePuzzle(g_app->puzzle, g_app->rng, g_app->puzzle_current);
-                    for (int i = 0; i < SLOTS; i++) g_app->f1[i] = Cmd();
-                    for (int i = 0; i < SLOTS; i++) g_app->f2[i] = Cmd();
-                    resetBot(g_app); refreshSlotButtons(g_app);
-                    char buf[128]; snprintf(buf, sizeof(buf), "Challenge %d / %d", g_app->puzzle_current + 1, TOTAL_PUZZLES);
-                    gtk_label_set_text(GTK_LABEL(g_app->puzzle_progress_label), buf);
-                    gtk_label_set_markup(GTK_LABEL(g_app->puzzle_msg), "<span foreground='#FFD93D'>Program the bot to collect all targets</span>");
-                    gtk_widget_queue_draw(g_app->board_drawing);
-                    return FALSE;
-                }, NULL);
-            }
-            return;
+    } else {
+        if (cmd.guard != 0 && p.cells[p.botY][p.botX] != cmd.guard) { scheduleStep(w); return; }
+        if (!moveBot(w, p.botX + DX[cmd.dir], p.botY + DY[cmd.dir])) {
+            stopRunWithMsg(w, "<span foreground='#FF4757'>CRASH!</span>"); return;
         }
-        g_timeout_add(STEP_MS, runStepTimer, w); return;
+        p.botDir = cmd.dir;
     }
-
-    if (cmd.guard != 0 && p.cells[p.botY][p.botX] != cmd.guard) { g_timeout_add(STEP_MS, runStepTimer, w); return; }
-
-    int nx = p.botX + DX[cmd.dir], ny = p.botY + DY[cmd.dir];
-    if (nx < 0 || ny < 0 || nx >= p.W || ny >= p.H || p.cells[ny][nx] == VOID) {
-        w->running = false; pc = 0; stepCount = 0;
-        gtk_label_set_markup(GTK_LABEL(w->puzzle_msg), "<span foreground='#FF4757'>CRASH!</span>"); return;
-    }
-    p.botX = nx; p.botY = ny; p.botDir = cmd.dir;
-    if (p.goals[ny][nx] && !p.collected[ny][nx]) { p.collected[ny][nx] = true; p.goalsCollected++; }
-    gtk_widget_queue_draw(w->board_drawing);
-    if (p.goalsCollected >= p.goalsTotal) {
-        w->running = false; pc = 0; stepCount = 0;
-        gtk_label_set_markup(GTK_LABEL(w->puzzle_msg), "<span foreground='#2ED573' weight='bold'>CHALLENGE COMPLETE!</span>");
-        w->puzzle_current++;
-        if (w->puzzle_current >= TOTAL_PUZZLES) {
-            gtk_label_set_markup(GTK_LABEL(w->puzzle_msg), "<span foreground='#2ED573' weight='bold'>ALL 10 CHALLENGES SOLVED!</span>");
-            if (g_uninstallMode) {
-                std::ofstream marker("/tmp/.pblock_uninstall_ok");
-                marker << "ok" << std::endl;
-                marker.close();
-                g_timeout_add(2000, [](gpointer) -> gboolean {
-                    GtkWidget* dlg = gtk_message_dialog_new(GTK_WINDOW(g_app->window),
-                        GTK_DIALOG_MODAL, GTK_MESSAGE_INFO, GTK_BUTTONS_OK,
-                        "Puzzle challenges completed!\n\nYou may now uninstall PBLOCK.\nThe package manager will now proceed.");
-                    gtk_dialog_run(GTK_DIALOG(dlg));
-                    gtk_widget_destroy(dlg);
-                    gtk_main_quit();
-                    return FALSE;
-                }, NULL);
-            }
-        } else {
-            g_timeout_add(1500, [](gpointer) -> gboolean {
-                generatePuzzle(g_app->puzzle, g_app->rng, g_app->puzzle_current);
-                for (int i = 0; i < SLOTS; i++) g_app->f1[i] = Cmd();
-                for (int i = 0; i < SLOTS; i++) g_app->f2[i] = Cmd();
-                resetBot(g_app); refreshSlotButtons(g_app);
-                char buf[128]; snprintf(buf, sizeof(buf), "Challenge %d / %d", g_app->puzzle_current + 1, TOTAL_PUZZLES);
-                gtk_label_set_text(GTK_LABEL(g_app->puzzle_progress_label), buf);
-                gtk_label_set_markup(GTK_LABEL(g_app->puzzle_msg), "<span foreground='#FFD93D'>Program the bot to collect all targets</span>");
-                gtk_widget_queue_draw(g_app->board_drawing);
-                return FALSE;
-            }, NULL);
-        }
-        return;
-    }
-    g_timeout_add(STEP_MS, runStepTimer, w);
+    if (p.goalsCollected >= p.goalsTotal) { onPuzzleSolved(w); return; }
+    scheduleStep(w);
 }
 
 static void on_run_clicked(GtkWidget*, AppWidgets* w) {
     if (w->running) return;
     bool empty = true;
-    for (int i = 0; i < SLOTS; i++) if (w->f1[i].isFunc || w->f1[i].dir || w->f1[i].guard || w->f1[i].isTurnLeft || w->f1[i].isTurnRight || w->f1[i].isJump) { empty = false; break; }
+    for (int i = 0; i < SLOTS; i++) if (!w->f1[i].empty()) { empty = false; break; }
     if (empty) { gtk_label_set_markup(GTK_LABEL(w->puzzle_msg), "<span foreground='#FF4757'>F1 is empty!</span>"); return; }
+    stopRun(w);
     w->running = true; w->steps_used = 0; w->puzzle.resetBot();
     gtk_label_set_markup(GTK_LABEL(w->puzzle_msg), "<span foreground='#FFD93D'>Running...</span>");
     gtk_widget_queue_draw(w->board_drawing);
-    g_timeout_add(STEP_MS, runStepTimer, w);
+    scheduleStep(w);
 }
 
 static void on_reset_clicked(GtkWidget*, AppWidgets* w) {
-    w->running = false;
+    stopRun(w);
     w->puzzle.resetBot();
     gtk_widget_queue_draw(w->board_drawing);
     gtk_label_set_markup(GTK_LABEL(w->puzzle_msg), "<span foreground='#FFD93D'>Program the bot to collect all targets</span>");
@@ -570,17 +564,19 @@ static void updateStatus(AppWidgets* w) {
         gtk_label_set_markup(GTK_LABEL(w->status_label), "<span size='xx-large' weight='bold'>Protection Inactive</span>");
         gtk_widget_set_visible(w->enable_btn, TRUE);
         gtk_widget_set_visible(w->disable_btn, FALSE);
-        gtk_widget_set_visible(w->settings_btn, hasPw);
+        gtk_widget_set_visible(w->settings_btn, TRUE);
+        gtk_button_set_label(GTK_BUTTON(w->settings_btn), hasPw ? "Change Password" : "Set Password");
     }
 }
 
-static void onEnable(GtkWidget*, AppWidgets* w) { if (!loadPasswordHash().empty()) blockContent(w); updateStatus(w); }
+static void onEnable(GtkWidget*, AppWidgets* w) {
+    if (loadPasswordHash().empty()) { gtk_stack_set_visible_child_name(GTK_STACK(w->stack), "password"); return; }
+    blockContent(w); updateStatus(w);
+}
 static void onDisable(GtkWidget*, AppWidgets* w) {
+    stopRun(w);
     w->puzzle_current = 0;
-    generatePuzzle(w->puzzle, w->rng, 0);
-    for (int i = 0; i < SLOTS; i++) w->f1[i] = Cmd();
-    for (int i = 0; i < SLOTS; i++) w->f2[i] = Cmd();
-    resetBot(w); refreshSlotButtons(w);
+    loadPuzzle(w, 0);
     char buf[128]; snprintf(buf, sizeof(buf), "Challenge 1 / %d", TOTAL_PUZZLES);
     gtk_label_set_text(GTK_LABEL(w->puzzle_progress_label), buf);
     gtk_stack_set_visible_child_name(GTK_STACK(w->stack), "puzzle");
@@ -623,8 +619,8 @@ static void onSlotClicked(GtkWidget* btn, gpointer data) {
 
     arr[idx] = Cmd();
     switch (stateMap[key]) {
-        case 1: arr[idx].dir = 0; break; // up
-        case 2: arr[idx].dir = 3; break; // right
+        case 1: arr[idx].isMove = true; arr[idx].dir = 0; break; // up
+        case 2: arr[idx].isMove = true; arr[idx].dir = 3; break; // right
         case 3: arr[idx].isTurnRight = true; break;
         case 4: arr[idx].isFunc = true; arr[idx].func = 1; break;
         default: break; // clear
@@ -701,7 +697,7 @@ static GtkWidget* createPuzzlePage(AppWidgets* w) {
     for (int i = 0; i < SLOTS; i++) {
         w->f1_btns[i] = gtk_button_new_with_label("\u2014");
         gtk_widget_set_size_request(w->f1_btns[i], 40, 40);
-        g_signal_connect(w->f1_btns[i], "clicked", G_CALLBACK(onSlotClicked), GINT_TO_POINTER(i));
+        g_signal_connect(w->f1_btns[i], "clicked", G_CALLBACK(onSlotClicked), GINT_TO_POINTER(i | (1 << 8)));
         gtk_box_pack_start(GTK_BOX(f1_row), w->f1_btns[i], FALSE, FALSE, 2);
     }
     gtk_box_pack_start(GTK_BOX(box), f1_row, FALSE, FALSE, 0);
@@ -767,16 +763,13 @@ int main(int argc, char* argv[]) {
 
     if (g_uninstallMode) {
         // Force into puzzle mode — no way back
-        generatePuzzle(g_app->puzzle, g_app->rng, 0);
-        for (int i = 0; i < SLOTS; i++) g_app->f1[i] = Cmd();
-        for (int i = 0; i < SLOTS; i++) g_app->f2[i] = Cmd();
-        g_app->puzzle.resetBot();
-        refreshSlotButtons(g_app);
+        loadPuzzle(g_app, 0);
         char buf[128]; snprintf(buf, sizeof(buf), "Challenge 1 / %d (UNINSTALL GATE)", TOTAL_PUZZLES);
         gtk_label_set_text(GTK_LABEL(g_app->puzzle_progress_label), buf);
         gtk_label_set_markup(GTK_LABEL(g_app->puzzle_msg),
             "<span foreground='#FF4757' weight='bold'>UNINSTALL PROTECTION ACTIVE</span>\n"
             "<span foreground='#FFD93D'>Solve all 10 puzzles to allow uninstall.\nThere is NO shortcut or bypass.</span>");
+        gtk_widget_set_no_show_all(g_app->puzzle_back_btn, TRUE);
         gtk_widget_hide(g_app->puzzle_back_btn);
         gtk_stack_set_visible_child_name(GTK_STACK(g_app->stack), "puzzle");
     } else {

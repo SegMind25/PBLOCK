@@ -6,7 +6,7 @@
 #   cl /EHsc main.cpp /link user32.lib gdi32.lib comctl32.lib crypt32.lib
 
 CXX = x86_64-w64-mingw32-g++
-CXXFLAGS = -std=c++17 -O2 -Wall -mwindows -municode
+CXXFLAGS = -std=c++17 -O2 -Wall -mwindows
 LIBS = -lcomctl32 -lgdi32 -lcrypt32
 TARGET = pblock-gui.exe
 

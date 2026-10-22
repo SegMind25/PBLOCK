@@ -4,8 +4,15 @@
 
 CONFIG="/etc/pblock.conf"
 HOSTS="/etc/hosts"
-MARKER="/tmp/.pblock_uninstall_ok"
+MARKER="/run/pblock_uninstall_ok"  # root-only dir; must match UNINSTALL_MARKER in src/main.cpp
 APP="/usr/bin/pblock"
+
+# dpkg also runs prerm on upgrade/deconfigure; only gate and clean up on removal,
+# otherwise every upgrade would demand the puzzles and wipe the hosts block + password.
+case "$1" in
+    remove|purge) ;;
+    *) exit 0 ;;
+esac
 
 echo ""
 echo "╔══════════════════════════════════════════════════════╗"
@@ -67,7 +74,7 @@ if [ "$BLOCKING" = true ]; then
                     echo "║  PBLOCK remains active. Content is still blocked.   ║"
                     echo "║                                                      ║"
                     echo "║  To uninstall, you MUST solve all 10 puzzles.       ║"
-                    echo "║  Run: sudo dpkg --remove pblock-gui                 ║"
+                    echo "║  Run: sudo dpkg --remove pblock                     ║"
                     echo "╚══════════════════════════════════════════════════════╝"
                     echo ""
                     # DO NOT proceed with uninstall

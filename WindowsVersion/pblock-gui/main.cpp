@@ -7,7 +7,6 @@
 #include <random>
 #include <algorithm>
 #include <cmath>
-#include <crypt.h>
 
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
@@ -37,11 +36,11 @@ static const int STEP_MS = 200;
 static const int TILE_COLORS[] = { 0, 0xFF4757, 0x2ED573, 0x3742FA, 0xFFA502, 0xA855F7 };
 
 struct Cmd {
-    bool isFunc = false;
+    bool isFunc = false, isMove = false;
     int func = 0, dir = 0, guard = 0;
     bool isTurnLeft = false, isTurnRight = false, isJump = false;
-    void clear() { isFunc = false; func = dir = guard = 0; isTurnLeft = isTurnRight = isJump = false; }
-    bool empty() const { return !isFunc && dir == 0 && guard == 0 && !isTurnLeft && !isTurnRight && !isJump; }
+    void clear() { *this = Cmd(); }
+    bool empty() const { return !isFunc && !isMove && !isTurnLeft && !isTurnRight && !isJump; }
     const char* label() const {
         if (isTurnLeft) return "\xC4\xB1"; // turn left arrow placeholder
         if (isTurnRight) return "\xC4\xB2";
@@ -303,7 +302,9 @@ static void generatePuzzle(Puzzle& p, std::mt19937& rng, int idx) {
                     p.goals[y][x] = true;
                     p.goalsTotal++;
                 }
-        if (p.goalsTotal < 4) p.goalsTotal = 4;
+        for (int y = 0; y < p.H && p.goalsTotal < 4; y++)
+            for (int x = 0; x < p.W && p.goalsTotal < 4; x++)
+                if (!p.goals[y][x] && p.cells[y][x] != 0) { p.goals[y][x] = true; p.goalsTotal++; }
         return;
     }
     p.W = 9; p.H = 7;
@@ -334,7 +335,7 @@ static void paintBoard(HDC hdc, RECT rc) {
     if (p.W == 0 || p.H == 0) return;
 
     int ww = rc.right - rc.left, wh = rc.bottom - rc.top;
-    double tile = min((double)ww / p.W, (double)wh / p.H) * 0.88;
+    double tile = std::min((double)ww / p.W, (double)wh / p.H) * 0.88;
     double oX = (ww - tile * p.W) / 2.0 + rc.left;
     double oY = (wh - tile * p.H) / 2.0 + rc.top;
 
@@ -405,6 +406,16 @@ static int g_runPC = 0;
 static int g_runStepCount = 0;
 
 static void CALLBACK runStepTimer(HWND, UINT, UINT_PTR, DWORD);
+static void updateStatus();
+static void showPage(int idx);
+
+static void onAllSolved() {
+    KillTimer(g_hWnd, g_runTimer);
+    SetWindowTextA(g_hMsg, "ALL 10 CHALLENGES SOLVED!");
+    unblockContent();
+    updateStatus();
+    showPage(0);
+}
 
 static void doRunStep() {
     if (!g_running) return;
@@ -443,7 +454,7 @@ static void doRunStep() {
             g_running = false; g_runPC = 0; g_runStepCount = 0;
             g_puzzleCurrent++;
             if (g_puzzleCurrent >= TOTAL_PUZZLES) {
-                SetWindowTextA(g_hMsg, "ALL 10 CHALLENGES SOLVED!");
+                onAllSolved();
             } else {
                 SetWindowTextA(g_hMsg, "Challenge complete! Loading next...");
                 KillTimer(g_hWnd, g_runTimer);
@@ -480,7 +491,7 @@ static void doRunStep() {
         g_running = false; g_runPC = 0; g_runStepCount = 0;
         g_puzzleCurrent++;
         if (g_puzzleCurrent >= TOTAL_PUZZLES) {
-            SetWindowTextA(g_hMsg, "ALL 10 CHALLENGES SOLVED!");
+            onAllSolved();
         } else {
             SetWindowTextA(g_hMsg, "Challenge complete! Loading next...");
             KillTimer(g_hWnd, g_runTimer);
@@ -566,8 +577,8 @@ static void onSlotClick(int idx) {
     g_slotMode[idx] = (g_slotMode[idx] + 1) % 5;
     f1[idx].clear();
     switch (g_slotMode[idx]) {
-        case 1: f1[idx].dir = 0; break;
-        case 2: f1[idx].dir = 3; break;
+        case 1: f1[idx].isMove = true; f1[idx].dir = 0; break;
+        case 2: f1[idx].isMove = true; f1[idx].dir = 3; break;
         case 3: f1[idx].isTurnRight = true; break;
         case 4: f1[idx].isFunc = true; f1[idx].func = 1; break;
     }
@@ -576,16 +587,10 @@ static void onSlotClick(int idx) {
 
 static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
-    case WM_PAINT: {
-        if (hWnd == g_hBoard) {
-            PAINTSTRUCT ps;
-            HDC hdc = BeginPaint(hWnd, &ps);
-            RECT rc;
-            GetClientRect(hWnd, &rc);
-            paintBoard(hdc, rc);
-            EndPaint(hWnd, &ps);
-            return 0;
-        }
+    case WM_DRAWITEM: {
+        // The board is an SS_OWNERDRAW static; its page (parent) receives WM_DRAWITEM.
+        const DRAWITEMSTRUCT* dis = (const DRAWITEMSTRUCT*)lParam;
+        if (dis->hwndItem == g_hBoard) { paintBoard(dis->hDC, dis->rcItem); return TRUE; }
         break;
     }
     case WM_COMMAND: {
@@ -599,7 +604,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
         break;
     }
     case WM_DESTROY:
-        PostQuitMessage(0);
+        if (hWnd == g_hWnd) PostQuitMessage(0);
         return 0;
     }
     return DefWindowProc(hWnd, msg, wParam, lParam);
@@ -607,7 +612,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
 
 static HWND createBtn(HWND parent, const char* text, int id, int x, int y, int w, int h) {
     return CreateWindowA("BUTTON", text, WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        x, y, w, h, parent, (HMENU)id, NULL, NULL);
+        x, y, w, h, parent, (HMENU)(INT_PTR)id, NULL, NULL);
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
@@ -625,34 +630,38 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     wc.lpszClassName = "PBlockWnd";
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     RegisterClassExA(&wc);
+    // Page containers use our WndProc too, so their child buttons' WM_COMMAND and the
+    // board's WM_DRAWITEM reach us (a plain STATIC parent would swallow them).
+    wc.lpszClassName = "PBlockPage";
+    RegisterClassExA(&wc);
 
     g_hWnd = CreateWindowExA(0, "PBlockWnd", APP_TITLE, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
         CW_USEDEFAULT, CW_USEDEFAULT, WIN_W, WIN_H, NULL, NULL, hInstance, NULL);
 
     // --- Status page (g_hStack[0]) ---
-    g_hStack[0] = CreateWindowA("STATIC", "", WS_CHILD, 0, 0, WIN_W, WIN_H, g_hWnd, NULL, NULL, NULL);
+    g_hStack[0] = CreateWindowA("PBlockPage", "", WS_CHILD, 0, 0, WIN_W, WIN_H, g_hWnd, NULL, NULL, NULL);
     g_hStatusLabel = CreateWindowA("STATIC", "Protection Inactive",
-        WS_CHILD | SS_CENTER, 150, 200, 300, 40, g_hStack[0], NULL, NULL, NULL);
+        WS_CHILD | WS_VISIBLE | SS_CENTER, 150, 200, 300, 40, g_hStack[0], NULL, NULL, NULL);
     HFONT hTitleFont = CreateFontA(28, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
         DEFAULT_PITCH, "Segoe UI");
     SendMessageA(g_hStatusLabel, WM_SETFONT, (WPARAM)hTitleFont, TRUE);
 
     CreateWindowA("STATIC", "Parental Content Control & Family Safety",
-        WS_CHILD | SS_CENTER, 100, 250, 400, 30, g_hStack[0], NULL, NULL, NULL);
+        WS_CHILD | WS_VISIBLE | SS_CENTER, 100, 250, 400, 30, g_hStack[0], NULL, NULL, NULL);
 
     g_hEnableBtn = createBtn(g_hStack[0], "Enable Content Filter", 1001, 175, 320, 250, 50);
     g_hDisableBtn = createBtn(g_hStack[0], "Disable (solve 10 puzzles)", 1002, 175, 390, 250, 50);
     ShowWindow(g_hDisableBtn, SW_HIDE);
 
     // --- Puzzle page (g_hStack[1]) ---
-    g_hStack[1] = CreateWindowA("STATIC", "", WS_CHILD, 0, 0, WIN_W, WIN_H, g_hWnd, NULL, NULL, NULL);
+    g_hStack[1] = CreateWindowA("PBlockPage", "", WS_CHILD, 0, 0, WIN_W, WIN_H, g_hWnd, NULL, NULL, NULL);
     g_hProgress = CreateWindowA("STATIC", "Challenge 1 / 10",
-        WS_CHILD | SS_CENTER, 200, 10, 200, 25, g_hStack[1], NULL, NULL, NULL);
-    g_hBoard = CreateWindowA("STATIC", "", WS_CHILD | SS_VISIBLE | SS_OWNERDRAW,
+        WS_CHILD | WS_VISIBLE | SS_CENTER, 200, 10, 200, 25, g_hStack[1], NULL, NULL, NULL);
+    g_hBoard = CreateWindowA("STATIC", "", WS_CHILD | WS_VISIBLE | SS_OWNERDRAW,
         20, 40, WIN_W - 40, 350, g_hStack[1], NULL, NULL, NULL);
     g_hMsg = CreateWindowA("STATIC", "Program the bot to collect all targets",
-        WS_CHILD | SS_CENTER, 50, 400, 500, 30, g_hStack[1], NULL, NULL, NULL);
+        WS_CHILD | WS_VISIBLE | SS_CENTER, 50, 400, 500, 30, g_hStack[1], NULL, NULL, NULL);
 
     // F1 slot buttons
     for (int i = 0; i < SLOTS; i++) {
