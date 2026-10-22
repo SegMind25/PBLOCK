@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <wincrypt.h>
 #include <commctrl.h>
 #include <string>
 #include <vector>
@@ -86,7 +87,7 @@ static HWND g_hF1Btns[SLOTS] = {};
 static HWND g_hRunBtn = NULL, g_hResetBtn = NULL;
 static HWND g_hStatusIcon = NULL, g_hStatusLabel = NULL;
 static HWND g_hEnableBtn = NULL, g_hDisableBtn = NULL;
-static HWND g_hPwEntry = NULL, g_hPwConfirm = NULL, g_hPwSetBtn = NULL;
+static HWND g_hPwEntry = NULL, g_hPwConfirm = NULL, g_hPwSetBtn = NULL, g_hPwMsg = NULL, g_hSettingsBtn = NULL;
 static HWND g_hStack[3] = {};
 static int g_currentPage = 0;
 static int g_slotMode[SLOTS * 2] = {};
@@ -190,6 +191,27 @@ static void savePasswordHash(const std::string& h) {
     if (f.is_open()) { f << h << std::endl; f.close(); }
 }
 
+// SHA-256 hex, same scheme as the CLI (WindowsVersion/mainPBLOCK.cpp) so both share pblock.conf.
+static std::string hashPassword(const std::string& password) {
+    HCRYPTPROV hProv = 0;
+    HCRYPTHASH hHash = 0;
+    BYTE hash[32];
+    DWORD hashLen = 32;
+    std::string result;
+    if (CryptAcquireContextA(&hProv, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT)) {
+        if (CryptCreateHash(hProv, CALG_SHA_256, 0, 0, &hHash)) {
+            if (CryptHashData(hHash, (const BYTE*)password.c_str(), (DWORD)password.length(), 0) &&
+                CryptGetHashParam(hHash, HP_HASHVAL, hash, &hashLen, 0)) {
+                char hex[3];
+                for (DWORD i = 0; i < hashLen; i++) { sprintf_s(hex, "%02x", hash[i]); result += hex; }
+            }
+            CryptDestroyHash(hHash);
+        }
+        CryptReleaseContext(hProv, 0);
+    }
+    return result;
+}
+
 static bool isBlocked() {
     std::ifstream f(HOSTS_FILE);
     std::string line;
@@ -255,6 +277,9 @@ static int countCells(Puzzle& p) {
 static int oppositeDir(int d) { return d == 0 ? 1 : d == 1 ? 0 : d == 2 ? 3 : 2; }
 static const int DX[] = { 0, 0, -1, 1 };
 static const int DY[] = { -1, 1, 0, 0 };
+// Direction order is up, down, left, right.
+static const int TURN_LEFT[]  = {2, 3, 1, 0};
+static const int TURN_RIGHT[] = {3, 2, 0, 1};
 
 static void generatePuzzle(Puzzle& p, std::mt19937& rng, int idx) {
     int legs = 4 + idx * 2;
@@ -438,8 +463,9 @@ static void doRunStep() {
     }
 
     Cmd& cmd = f1[g_runPC++];
-    if (cmd.isTurnLeft) { p.botDir = (p.botDir + 3) % 4; InvalidateRect(g_hBoard, NULL, FALSE); return; }
-    if (cmd.isTurnRight) { p.botDir = (p.botDir + 1) % 4; InvalidateRect(g_hBoard, NULL, FALSE); return; }
+    if (cmd.isFunc) { g_runPC = 0; return; }  // F1 call: loop back to start
+    if (cmd.isTurnLeft) { p.botDir = TURN_LEFT[p.botDir]; InvalidateRect(g_hBoard, NULL, FALSE); return; }
+    if (cmd.isTurnRight) { p.botDir = TURN_RIGHT[p.botDir]; InvalidateRect(g_hBoard, NULL, FALSE); return; }
     if (cmd.isJump) {
         int nx = p.botX + DX[p.botDir] * 2, ny = p.botY + DY[p.botDir] * 2;
         if (nx < 0 || ny < 0 || nx >= p.W || ny >= p.H || p.cells[ny][nx] == 0) {
@@ -461,7 +487,7 @@ static void doRunStep() {
                 SetTimer(g_hWnd, 1, 1500, [](HWND, UINT, UINT_PTR, DWORD) {
                     KillTimer(g_hWnd, 1);
                     generatePuzzle(g_puzzle, g_rng, g_puzzleCurrent);
-                    for (int i = 0; i < SLOTS; i++) f1[i].clear();
+                    for (int i = 0; i < SLOTS; i++) { f1[i].clear(); g_slotMode[i] = 0; }
                     g_puzzle.resetBot();
                     refreshSlotBtns();
                     InvalidateRect(g_hBoard, NULL, FALSE);
@@ -498,7 +524,7 @@ static void doRunStep() {
             SetTimer(g_hWnd, 1, 1500, [](HWND, UINT, UINT_PTR, DWORD) {
                 KillTimer(g_hWnd, 1);
                 generatePuzzle(g_puzzle, g_rng, g_puzzleCurrent);
-                for (int i = 0; i < SLOTS; i++) f1[i].clear();
+                for (int i = 0; i < SLOTS; i++) { f1[i].clear(); g_slotMode[i] = 0; }
                 g_puzzle.resetBot();
                 refreshSlotBtns();
                 InvalidateRect(g_hBoard, NULL, FALSE);
@@ -552,17 +578,37 @@ static void updateStatus() {
     SetWindowTextA(g_hStatusLabel, blocked ? "Protection Active" : "Protection Inactive");
     ShowWindow(g_hEnableBtn, blocked ? SW_HIDE : SW_SHOW);
     ShowWindow(g_hDisableBtn, blocked ? SW_SHOW : SW_HIDE);
+    SetWindowTextA(g_hPwSetBtn, hasPw ? "Change Password" : "Set Password");
+    ShowWindow(g_hSettingsBtn, blocked ? SW_HIDE : SW_SHOW);
+    SetWindowTextA(g_hSettingsBtn, hasPw ? "Change Password" : "Set Password");
+}
+
+static std::string getText(HWND h) {
+    char buf[256] = {};
+    GetWindowTextA(h, buf, sizeof(buf));
+    return buf;
+}
+
+static void onSetPassword() {
+    std::string pw = getText(g_hPwEntry), confirm = getText(g_hPwConfirm);
+    if (pw.length() < 4) { SetWindowTextA(g_hPwMsg, "Password must be at least 4 characters"); return; }
+    if (pw != confirm) { SetWindowTextA(g_hPwMsg, "Passwords do not match"); return; }
+    savePasswordHash(hashPassword(pw));
+    SetWindowTextA(g_hPwEntry, ""); SetWindowTextA(g_hPwConfirm, ""); SetWindowTextA(g_hPwMsg, "");
+    updateStatus();
+    showPage(0);
 }
 
 static void onEnable() {
-    if (!loadPasswordHash().empty()) blockContent();
+    if (loadPasswordHash().empty()) { SetWindowTextA(g_hPwMsg, "Set a password first"); showPage(2); return; }
+    blockContent();
     updateStatus();
 }
 
 static void onDisable() {
     g_puzzleCurrent = 0;
     generatePuzzle(g_puzzle, g_rng, 0);
-    for (int i = 0; i < SLOTS; i++) f1[i].clear();
+    for (int i = 0; i < SLOTS; i++) { f1[i].clear(); g_slotMode[i] = 0; }
     g_puzzle.resetBot();
     refreshSlotBtns();
     InvalidateRect(g_hBoard, NULL, FALSE);
@@ -574,14 +620,14 @@ static void onDisable() {
 }
 
 static void onSlotClick(int idx) {
-    g_slotMode[idx] = (g_slotMode[idx] + 1) % 5;
+    // Cycle: clear -> up -> down -> left -> right -> turn left -> turn right -> F1 (loop) -> clear
+    g_slotMode[idx] = (g_slotMode[idx] + 1) % 8;
     f1[idx].clear();
-    switch (g_slotMode[idx]) {
-        case 1: f1[idx].isMove = true; f1[idx].dir = 0; break;
-        case 2: f1[idx].isMove = true; f1[idx].dir = 3; break;
-        case 3: f1[idx].isTurnRight = true; break;
-        case 4: f1[idx].isFunc = true; f1[idx].func = 1; break;
-    }
+    int m = g_slotMode[idx];
+    if (m >= 1 && m <= 4) { f1[idx].isMove = true; f1[idx].dir = m - 1; }
+    else if (m == 5) f1[idx].isTurnLeft = true;
+    else if (m == 6) f1[idx].isTurnRight = true;
+    else if (m == 7) { f1[idx].isFunc = true; f1[idx].func = 1; }
     refreshSlotBtns();
 }
 
@@ -600,6 +646,9 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
         else if (id == 1010) startRun();
         else if (id == 1011) resetRun();
         else if (id == 1020) showPage(0); // status back
+        else if (id == 1003) showPage(2); // password page
+        else if (id == 1030) onSetPassword();
+        else if (id == 1031) { SetWindowTextA(g_hPwMsg, ""); showPage(0); }
         else if (id >= 2000 && id < 2000 + SLOTS) onSlotClick(id - 2000);
         break;
     }
@@ -653,6 +702,22 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     g_hEnableBtn = createBtn(g_hStack[0], "Enable Content Filter", 1001, 175, 320, 250, 50);
     g_hDisableBtn = createBtn(g_hStack[0], "Disable (solve 10 puzzles)", 1002, 175, 390, 250, 50);
     ShowWindow(g_hDisableBtn, SW_HIDE);
+    g_hSettingsBtn = createBtn(g_hStack[0], "Set Password", 1003, 175, 460, 250, 40);
+
+    // --- Password page (g_hStack[2]) ---
+    g_hStack[2] = CreateWindowA("PBlockPage", "", WS_CHILD, 0, 0, WIN_W, WIN_H, g_hWnd, NULL, NULL, NULL);
+    CreateWindowA("STATIC", "Password", WS_CHILD | WS_VISIBLE | SS_CENTER,
+        150, 180, 300, 30, g_hStack[2], NULL, NULL, NULL);
+    g_hPwEntry = CreateWindowA("EDIT", "", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_PASSWORD | ES_AUTOHSCROLL,
+        175, 230, 250, 30, g_hStack[2], NULL, NULL, NULL);
+    g_hPwConfirm = CreateWindowA("EDIT", "", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_PASSWORD | ES_AUTOHSCROLL,
+        175, 275, 250, 30, g_hStack[2], NULL, NULL, NULL);
+    SendMessageA(g_hPwEntry, EM_SETCUEBANNER, FALSE, (LPARAM)L"Password");
+    SendMessageA(g_hPwConfirm, EM_SETCUEBANNER, FALSE, (LPARAM)L"Confirm password");
+    g_hPwMsg = CreateWindowA("STATIC", "", WS_CHILD | WS_VISIBLE | SS_CENTER,
+        100, 315, 400, 25, g_hStack[2], NULL, NULL, NULL);
+    g_hPwSetBtn = createBtn(g_hStack[2], "Set Password", 1030, 175, 350, 250, 45);
+    createBtn(g_hStack[2], "Back", 1031, 225, 410, 150, 35);
 
     // --- Puzzle page (g_hStack[1]) ---
     g_hStack[1] = CreateWindowA("PBlockPage", "", WS_CHILD, 0, 0, WIN_W, WIN_H, g_hWnd, NULL, NULL, NULL);

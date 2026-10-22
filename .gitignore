@@ -1,0 +1,5 @@
+WindowsVersion/pblock-gui/*.exe
+WindowsVersion/pblock-gui/*.o
+AndroidVersion/app/build/
+AndroidVersion/.gradle/
+AndroidVersion/local.properties

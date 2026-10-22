@@ -23,12 +23,14 @@ install: $(BIN)
 	install -Dm644 desktop/pblock.desktop $(DESTDIR)$(PREFIX)/share/applications/pblock.desktop
 	install -Dm644 icons/pblock.png $(DESTDIR)$(PREFIX)/share/icons/hicolor/256x256/apps/pblock.png
 	install -Dm644 LICENSE $(DESTDIR)$(PREFIX)/share/doc/pblock/copyright
+	install -Dm644 polkit/com.github.segmind25.pblock.policy $(DESTDIR)$(PREFIX)/share/polkit-1/actions/com.github.segmind25.pblock.policy
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/$(APP_NAME)
 	rm -f $(DESTDIR)$(PREFIX)/share/applications/pblock.desktop
 	rm -f $(DESTDIR)$(PREFIX)/share/icons/hicolor/256x256/apps/pblock.png
 	rm -rf $(DESTDIR)$(PREFIX)/share/doc/pblock
+	rm -f $(DESTDIR)$(PREFIX)/share/polkit-1/actions/com.github.segmind25.pblock.policy
 
 deb: $(BIN)
 	@mkdir -p deb-pkg/DEBIAN
@@ -36,6 +38,8 @@ deb: $(BIN)
 	@mkdir -p deb-pkg/usr/share/applications
 	@mkdir -p deb-pkg/usr/share/icons/hicolor/256x256/apps
 	@mkdir -p deb-pkg/usr/share/doc/pblock
+	@mkdir -p deb-pkg/usr/share/polkit-1/actions
+	@cp polkit/com.github.segmind25.pblock.policy deb-pkg/usr/share/polkit-1/actions/
 	@cp $(BIN) deb-pkg/usr/bin/pblock
 	@chmod 755 deb-pkg/usr/bin/pblock
 	@cp desktop/pblock.desktop deb-pkg/usr/share/applications/

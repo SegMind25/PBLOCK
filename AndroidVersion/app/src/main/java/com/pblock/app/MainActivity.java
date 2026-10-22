@@ -431,6 +431,7 @@ public class MainActivity extends AppCompatActivity {
                 boolean adminDeactivated = false;
                 if (isDeviceAdminActive()) {
                     try {
+                        PBlockDeviceAdminReceiver.allowDeactivation(this);
                         devicePolicyManager.removeActiveAdmin(adminComponent);
                         adminDeactivated = true;
                     } catch (Exception e) {
@@ -716,6 +717,7 @@ public class MainActivity extends AppCompatActivity {
                 + "PBLOCK can be uninstalled until it is activated again.")
             .setCancelable(false)
             .setPositiveButton("Deactivate Admin", (dialog, which) -> {
+                PBlockDeviceAdminReceiver.allowDeactivation(this);
                 devicePolicyManager.removeActiveAdmin(adminComponent);
                 updateDeviceAdminUI();
                 updateVpnButton();

@@ -25,6 +25,9 @@ static const char* UNINSTALL_MARKER = "/run/pblock_uninstall_ok";
 static const int VOID = 0, RED = 1, GREEN = 2, BLUE = 3, YELLOW_C = 4, PURPLE = 5;
 static const int DX[] = {0, 0, -1, 1};
 static const int DY[] = {-1, 1, 0, 0};
+// Direction order is up, down, left, right.
+static const int TURN_LEFT[]  = {2, 3, 1, 0};
+static const int TURN_RIGHT[] = {3, 2, 0, 1};
 static const char* ARROW[] = {"\u2191", "\u2193", "\u2190", "\u2192"};
 
 static std::vector<std::string> blocked_domains = {
@@ -374,24 +377,23 @@ static void refreshSlotButtons(AppWidgets* w) {
             GtkWidget* btn = f == 0 ? w->f1_btns[i] : w->f2_btns[i];
             if (!btn) continue;  // F2 row is not built yet
             Cmd& c = f == 0 ? w->f1[i] : w->f2[i];
+            char css[96];
             if (!c.empty()) {
                 gtk_button_set_label(GTK_BUTTON(btn), c.label().c_str());
                 unsigned int clr = c.cmdColor();
-                char css[96];
                 snprintf(css, sizeof(css), "* { background-color: #%06X; color: white; font-weight: bold; }", (unsigned int)((clr >> 8) & 0xFFFFFF));
-                GtkCssProvider* prov = gtk_css_provider_new();
-                gtk_css_provider_load_from_data(prov, css, -1, NULL);
-                GtkStyleContext* ctx = gtk_widget_get_style_context(btn);
-                gtk_style_context_add_provider(ctx, GTK_STYLE_PROVIDER(prov), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-                g_object_unref(prov);
             } else {
                 gtk_button_set_label(GTK_BUTTON(btn), "\u2014");
-                GtkCssProvider* prov = gtk_css_provider_new();
-                gtk_css_provider_load_from_data(prov, "* { background-color: #1A1A2E; color: white; }", -1, NULL);
-                GtkStyleContext* ctx = gtk_widget_get_style_context(btn);
-                gtk_style_context_add_provider(ctx, GTK_STYLE_PROVIDER(prov), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-                g_object_unref(prov);
+                snprintf(css, sizeof(css), "* { background-color: #1A1A2E; color: white; }");
             }
+            // Reuse one provider per button so refreshes don't stack providers.
+            GtkCssProvider* prov = GTK_CSS_PROVIDER(g_object_get_data(G_OBJECT(btn), "slot-css"));
+            if (!prov) {
+                prov = gtk_css_provider_new();
+                gtk_style_context_add_provider(gtk_widget_get_style_context(btn), GTK_STYLE_PROVIDER(prov), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+                g_object_set_data_full(G_OBJECT(btn), "slot-css", prov, g_object_unref);
+            }
+            gtk_css_provider_load_from_data(prov, css, -1, NULL);
         }
     }
 }
@@ -490,8 +492,9 @@ static void runStep(AppWidgets* w) {
 
     Cmd& cmd = w->f1[w->pc]; w->pc++;
 
-    if (cmd.isTurnLeft) { p.botDir = (p.botDir + 3) % 4; gtk_widget_queue_draw(w->board_drawing); scheduleStep(w); return; }
-    if (cmd.isTurnRight) { p.botDir = (p.botDir + 1) % 4; gtk_widget_queue_draw(w->board_drawing); scheduleStep(w); return; }
+    if (cmd.isFunc) { w->pc = 0; scheduleStep(w); return; }  // F1 call: loop back to start
+    if (cmd.isTurnLeft) { p.botDir = TURN_LEFT[p.botDir]; gtk_widget_queue_draw(w->board_drawing); scheduleStep(w); return; }
+    if (cmd.isTurnRight) { p.botDir = TURN_RIGHT[p.botDir]; gtk_widget_queue_draw(w->board_drawing); scheduleStep(w); return; }
     if (cmd.isJump) {
         if (!moveBot(w, p.botX + DX[p.botDir] * 2, p.botY + DY[p.botDir] * 2)) {
             stopRunWithMsg(w, "<span foreground='#FF4757'>Jump crash!</span>"); return;
@@ -527,6 +530,10 @@ static void on_reset_clicked(GtkWidget*, AppWidgets* w) {
 }
 
 // Hosts blocking
+static void flushDnsCache() {
+    if (system("resolvectl flush-caches 2>/dev/null || systemd-resolve --flush-caches 2>/dev/null || nscd -i hosts 2>/dev/null || true") != 0) {}
+}
+
 static void blockContent(AppWidgets* w) {
     if (isBlocked()) return;
     backupHosts();
@@ -538,7 +545,7 @@ static void blockContent(AppWidgets* w) {
     for (const auto& d : bing_domains) hosts << "204.79.197.220 " << d << "\n";
     for (const auto& d : blocked_search_engines) { hosts << "127.0.0.1 " << d << "\n::1 " << d << "\n"; }
     hosts << "# PBLOCK_END\n"; hosts.close();
-    system("systemd-resolve --flush-caches 2>/dev/null || nscd -i hosts 2>/dev/null || true");
+    flushDnsCache();
 }
 
 static void unblockContent(AppWidgets* w) {
@@ -550,7 +557,7 @@ static void unblockContent(AppWidgets* w) {
     }
     f.close();
     std::ofstream out(HOSTS_FILE); for (const auto& l : lines) out << l << "\n"; out.close();
-    system("systemd-resolve --flush-caches 2>/dev/null || nscd -i hosts 2>/dev/null || true");
+    flushDnsCache();
 }
 
 static void updateStatus(AppWidgets* w) {
@@ -612,19 +619,20 @@ static void onSlotClicked(GtkWidget* btn, gpointer data) {
     bool isF1 = (GPOINTER_TO_INT(data) >> 8) & 1;
     Cmd* arr = isF1 ? g_app->f1 : g_app->f2;
 
-    // Simple cycle: none -> forward -> turn right -> turn left -> F1 -> clear
-    static int stateMap[SLOTS * 2] = {};
-    int key = isF1 ? idx : idx + SLOTS;
-    stateMap[key] = (stateMap[key] + 1) % 5;
+    // Cycle: clear -> up -> down -> left -> right -> turn left -> turn right -> F1 (loop) -> clear
+    const Cmd& cur = arr[idx];
+    int state = 0;
+    if (cur.isMove) state = 1 + cur.dir;
+    else if (cur.isTurnLeft) state = 5;
+    else if (cur.isTurnRight) state = 6;
+    else if (cur.isFunc) state = 7;
+    state = (state + 1) % 8;
 
     arr[idx] = Cmd();
-    switch (stateMap[key]) {
-        case 1: arr[idx].isMove = true; arr[idx].dir = 0; break; // up
-        case 2: arr[idx].isMove = true; arr[idx].dir = 3; break; // right
-        case 3: arr[idx].isTurnRight = true; break;
-        case 4: arr[idx].isFunc = true; arr[idx].func = 1; break;
-        default: break; // clear
-    }
+    if (state >= 1 && state <= 4) { arr[idx].isMove = true; arr[idx].dir = state - 1; }
+    else if (state == 5) arr[idx].isTurnLeft = true;
+    else if (state == 6) arr[idx].isTurnRight = true;
+    else if (state == 7) { arr[idx].isFunc = true; arr[idx].func = 1; }
     refreshSlotButtons(g_app);
 }
 

@@ -3,8 +3,7 @@ Version: VERSION
 Section: net
 Priority: optional
 Architecture: amd64
-Depends: libgtk-3-0
-Recommends: sudo
+Depends: libgtk-3-0, pkexec | policykit-1
 Installed-Size: 512
 Maintainer: Bekkali <segmind25@github.com>
 Homepage: https://github.com/SegMind25/PBLOCK
@@ -20,4 +19,4 @@ Description: PBLOCK - Family Safety Content Filter
   - Survives system reboot
  .
  This app requires root privileges to modify /etc/hosts.
- Run with: sudo pblock
+ Launch from the app menu, or run: sudo pblock

@@ -619,6 +619,7 @@ public class UninstallProtectionActivity extends Activity {
                     DevicePolicyManager dpm = (DevicePolicyManager)
                         getSystemService(Context.DEVICE_POLICY_SERVICE);
                     ComponentName admin = new ComponentName(this, PBlockDeviceAdminReceiver.class);
+                    PBlockDeviceAdminReceiver.allowDeactivation(this);
                     dpm.removeActiveAdmin(admin);
                 } catch (Exception ignored) {}
                 // Launch uninstall intent

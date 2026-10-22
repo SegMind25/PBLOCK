@@ -12,6 +12,13 @@ import android.widget.Toast;
 public class PBlockDeviceAdminReceiver extends DeviceAdminReceiver {
 
     private static final String TAG = "PBLOCK";
+    private static final String KEY_UNLOCK_OK = "admin_unlock_ok";
+
+    /** Call right before removeActiveAdmin() once the puzzles are solved. */
+    public static void allowDeactivation(Context context) {
+        context.getSharedPreferences(BootReceiver.PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_UNLOCK_OK, true).commit();
+    }
 
     @Override
     public void onEnabled(Context context, Intent intent) {
@@ -58,10 +65,29 @@ public class PBlockDeviceAdminReceiver extends DeviceAdminReceiver {
             Log.w(TAG, "setUninstallBlocked reset failed: " + e.getMessage());
         }
 
+        SharedPreferences prefs = context.getSharedPreferences(BootReceiver.PREFS, Context.MODE_PRIVATE);
+        if (!prefs.getBoolean(KEY_UNLOCK_OK, false)) {
+            // Admin was switched off from Settings without solving the puzzles.
+            // Android doesn't let a plain device admin veto this, so keep blocking
+            // running and ask the user to re-activate protection.
+            Log.w(TAG, "Device Admin disabled without solving puzzles; keeping protection");
+            try {
+                androidx.core.content.ContextCompat.startForegroundService(context,
+                    new Intent(context, PBlockService.class));
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to restart PBlockService: " + e.getMessage());
+            }
+            Intent main = new Intent(context, MainActivity.class);
+            main.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            try { context.startActivity(main); } catch (Exception ignored) {}
+            Toast.makeText(context, "PBLOCK: Device Admin was turned off without solving the puzzles. "
+                + "Content blocking stays on - please re-activate Device Admin.", Toast.LENGTH_LONG).show();
+            return;
+        }
+
         Intent serviceIntent = new Intent(context, PBlockService.class);
         context.stopService(serviceIntent);
 
-        SharedPreferences prefs = context.getSharedPreferences(BootReceiver.PREFS, Context.MODE_PRIVATE);
         prefs.edit().clear().apply();
 
         Toast.makeText(context, "PBLOCK: Device Admin deactivated. "
