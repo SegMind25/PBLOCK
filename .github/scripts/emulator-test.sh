@@ -65,6 +65,9 @@ echo "==> Device: $(sh_ getprop ro.product.model) / Android $(sh_ getprop ro.bui
 adb install -r "$APK" > "$OUT/install.txt" 2>&1
 check "Install APK" "$(tail -1 "$OUT/install.txt")" grep -q Success "$OUT/install.txt"
 sh_ pm grant $PKG android.permission.POST_NOTIFICATIONS >/dev/null
+# Android only offers Always-on for apps whose VPN service declares the
+# android.net.VpnService intent filter (missing before 1.7.0 -> "Not supported by this app").
+check "Always-on VPN supported by the app" "VpnService intent filter" bash -c "adb shell cmd package query-services -a android.net.VpnService --components 2>/dev/null | grep -q $PKG"
 # Pre-approve the VPN consent dialog (a person taps "OK" on a real phone)
 sh_ appops set $PKG ACTIVATE_VPN allow >/dev/null
 
