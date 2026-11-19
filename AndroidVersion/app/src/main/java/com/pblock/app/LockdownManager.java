@@ -76,7 +76,11 @@ public final class LockdownManager {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             restrict(dpm, admin, UserManager.DISALLOW_CONFIG_PRIVATE_DNS); // custom DNS bypass
             try {
-                dpm.setGlobalPrivateDnsModeOpportunistic(admin);
+                // Keep a family-filter Private DNS (the "backup filter"); reset anything
+                // else (a bypass resolver) to Automatic.
+                if (!isFamilyPrivateDns(context)) {
+                    dpm.setGlobalPrivateDnsModeOpportunistic(admin);
+                }
             } catch (Exception e) {
                 Log.w(TAG, "setGlobalPrivateDnsModeOpportunistic: " + e.getMessage());
             }
@@ -94,6 +98,21 @@ public final class LockdownManager {
         context.getSharedPreferences(BootReceiver.PREFS, Context.MODE_PRIVATE)
             .edit().putBoolean(BootReceiver.KEY_ENABLED, true).apply();
         Log.i(TAG, "Lock mode policies applied");
+    }
+
+    static boolean isFamilyPrivateDns(Context context) {
+        try {
+            String mode = android.provider.Settings.Global.getString(
+                context.getContentResolver(), "private_dns_mode");
+            String host = android.provider.Settings.Global.getString(
+                context.getContentResolver(), "private_dns_specifier");
+            if (!"hostname".equals(mode) || host == null) return false;
+            host = host.toLowerCase(java.util.Locale.ROOT);
+            return host.contains("family") || host.contains("cleanbrowsing")
+                || host.contains("adult-filter");
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private static void restrict(DevicePolicyManager dpm, ComponentName admin, String key) {

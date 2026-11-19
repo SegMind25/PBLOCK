@@ -88,8 +88,27 @@ every time the phone boots.
    restrictions" / "Don't optimise").
 6. **Restart the phone** and open PBLOCK. It should still be green.
 
-If protection ever fails to start after a reboot, PBLOCK shows the notification
-**"PBLOCK protection is OFF – tap to turn it back on"**.
+If protection ever fails to start after a reboot, PBLOCK's watchdog retries every
+15 minutes. If it still can't, it shows **"PBLOCK protection is OFF – tap to turn it
+back on"**.
+
+### Backup filter that never stops (strongly recommended)
+
+Android's **Private DNS** is a system setting, so it keeps blocking adult sites
+even if PBLOCK is stopped, after every restart, on every phone brand. It also forces
+SafeSearch on Google, Bing and YouTube.
+
+1. In PBLOCK tap **Backup filter that never stops** → **Copy & open settings**.
+2. Find **Private DNS**:
+   - Pixel / most phones: Network & internet → Private DNS
+   - Samsung: Connections → More connection settings → Private DNS
+   - Xiaomi: Connection & sharing → Private DNS
+3. Choose **Private DNS provider hostname** and paste:
+   `family-filter-dns.cleanbrowsing.org`
+4. Tap **Save**.
+
+If websites stop loading, set it back to **Automatic** and open an issue with your
+phone model. In lock mode this setting is locked, so it can't be changed.
 
 ## 5. Turn on Search Shield
 
@@ -133,7 +152,7 @@ adb shell dpm set-device-owner com.pblock.app/.PBlockDeviceAdminReceiver
 |---------|-----|
 | "App blocked to protect your device" | Step 2: A → B → C → D |
 | "App not installed" / "conflicts with an existing package" | An older PBLOCK signed with a different key is installed. Uninstall it first (not possible in lock mode; there, install a newer version with `adb install -r`). |
-| Protection is off after a restart | Do all of step 4, especially **Always-on VPN** and **Battery → Unrestricted** |
+| Protection is off after a restart | Do all of step 4: **Always-on VPN**, **Autostart + battery** (Unrestricted), and the **Private DNS backup filter**, which works even when the app is stopped |
 | Adult sites still open | Make sure the circle is green. In Chrome: Settings → Privacy and security → **Use secure DNS** → Off. Restart the browser. |
 | Google search still shows explicit results | Turn on Search Shield (step 5) and switch Chrome's secure DNS off |
 | Search Shield switch is greyed out | **Allow restricted settings** (step 5.3) |

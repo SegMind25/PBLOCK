@@ -3,7 +3,6 @@ package com.pblock.app;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.util.Log;
 
 public class BootReceiver extends BroadcastReceiver {
@@ -60,23 +59,10 @@ public class BootReceiver extends BroadcastReceiver {
 
         LockdownManager.applyIfDeviceOwner(context);
 
-        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        boolean vpnEnabledByUser = prefs.getBoolean(KEY_ENABLED, false);
-
-        // prepare() != null means VPN consent was revoked; starting would just fail,
-        // so tell the user instead of silently staying unprotected.
-        if (vpnEnabledByUser && !PBlockVpnService.isRunning()
-                && android.net.VpnService.prepare(context) != null) {
-            notifyProtectionOff(context);
-        } else if (vpnEnabledByUser && !PBlockVpnService.isRunning()) {
-            try {
-                androidx.core.content.ContextCompat.startForegroundService(
-                    context, new Intent(context, PBlockVpnService.class));
-                Log.i(TAG, "VPN blocking restarted after boot");
-            } catch (Exception e) {
-                Log.e(TAG, "Boot VPN start failed: " + e.getMessage());
-            }
-        }
+        // Restart the VPN filter (or notify if it can't), and make sure the
+        // reboot-proof watchdog job is scheduled as a second line of defence.
+        WatchdogJobService.heal(context);
+        WatchdogJobService.schedule(context);
 
         BootHostsManager hostsManager = new BootHostsManager(context);
         if (!hostsManager.wasRootBlockingActive()) {

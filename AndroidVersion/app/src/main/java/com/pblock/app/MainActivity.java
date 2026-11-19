@@ -59,7 +59,7 @@ public class MainActivity extends AppCompatActivity {
     private View advancedContainer;
     private static final String KEY_PROTECTED_SINCE = "protected_since";
     static final String EXTRA_OPEN_URGE = "open_urge";
-    private TextView stepShield, stepBoot;
+    private TextView stepShield, stepBoot, stepDns;
 
     private DevicePolicyManager devicePolicyManager;
     private ComponentName adminComponent;
@@ -111,6 +111,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         LockdownManager.applyIfDeviceOwner(this);
+        WatchdogJobService.schedule(this);
 
         updateDeviceAdminUI();
 
@@ -1021,6 +1022,8 @@ public class MainActivity extends AppCompatActivity {
         stepShield.setOnClickListener(v -> showSearchShieldSetup());
         stepBoot = findViewById(R.id.stepBoot);
         stepBoot.setOnClickListener(v -> showRestartSetup());
+        stepDns = findViewById(R.id.stepDns);
+        stepDns.setOnClickListener(v -> showPrivateDnsSetup());
         advancedToggle = findViewById(R.id.advancedToggle);
         advancedContainer = findViewById(R.id.advancedContainer);
 
@@ -1081,7 +1084,10 @@ public class MainActivity extends AppCompatActivity {
         setStep(stepPassword, hasPassword);
         setStep(stepFilter, active);
         setStep(stepShield, SearchShieldService.isEnabled(this));
-        setStep(stepBoot, locked || isAlwaysOnVpnEnabled());
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+        boolean batteryOk = pm == null || pm.isIgnoringBatteryOptimizations(getPackageName());
+        setStep(stepBoot, locked || (isAlwaysOnVpnEnabled() && batteryOk));
+        setStep(stepDns, isPrivateDnsSet());
         setStep(stepLock, locked);
     }
 
@@ -1101,7 +1107,62 @@ public class MainActivity extends AppCompatActivity {
             .setPositiveButton("Open VPN settings", (d, w) -> openFirst(
                 new Intent("android.net.vpn.SETTINGS"),
                 new Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS)))
-            .setNeutralButton("Autostart", (d, w) -> openAutostartSettings())
+            .setNeutralButton("Autostart + battery", (d, w) -> {
+                requestBatteryExemption();
+                mainHandler.postDelayed(this::openAutostartSettings, 400);
+            })
+            .setNegativeButton("Later", null)
+            .show();
+    }
+
+    static final String FAMILY_DNS = "family-filter-dns.cleanbrowsing.org";
+
+    /** True if Android's Private DNS is set to a hostname (e.g. the family filter). */
+    private boolean isPrivateDnsSet() {
+        try {
+            String mode = android.provider.Settings.Global.getString(
+                getContentResolver(), "private_dns_mode");
+            String host = android.provider.Settings.Global.getString(
+                getContentResolver(), "private_dns_specifier");
+            return "hostname".equals(mode) && host != null && !host.isEmpty();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Backup filter that needs no app at all: Android's Private DNS set to a family filter.
+     * It survives every reboot, app kill and battery saver, on every phone brand.
+     */
+    private void showPrivateDnsSetup() {
+        if (Build.VERSION.SDK_INT < 28) {
+            Toast.makeText(this, "Private DNS needs Android 9 or newer", Toast.LENGTH_LONG).show();
+            return;
+        }
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Backup filter (never stops)")
+            .setMessage("This is an Android setting, so it keeps blocking adult sites even "
+                + "if PBLOCK is stopped, and after every restart. It also forces "
+                + "SafeSearch on Google, Bing and YouTube.\n\n"
+                + "1. Tap \"Copy & open settings\".\n"
+                + "2. Find \"Private DNS\" (Network & internet, or Connections > More "
+                + "connection settings; on Xiaomi: Connection & sharing).\n"
+                + "3. Choose \"Private DNS provider hostname\".\n"
+                + "4. Paste:  " + FAMILY_DNS + "\n"
+                + "5. Tap Save.\n\n"
+                + "If websites stop loading, set Private DNS back to Automatic and tell us "
+                + "your phone model.")
+            .setPositiveButton("Copy & open settings", (d, w) -> {
+                android.content.ClipboardManager cm =
+                    (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                if (cm != null) {
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("dns", FAMILY_DNS));
+                    Toast.makeText(this, "Copied: " + FAMILY_DNS, Toast.LENGTH_LONG).show();
+                }
+                openFirst(new Intent("android.settings.PRIVATE_DNS_SETTINGS"),
+                    new Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS),
+                    new Intent(android.provider.Settings.ACTION_SETTINGS));
+            })
             .setNegativeButton("Later", null)
             .show();
     }

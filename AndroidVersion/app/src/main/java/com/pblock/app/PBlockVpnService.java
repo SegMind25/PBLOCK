@@ -144,6 +144,7 @@ public class PBlockVpnService extends VpnService {
             // Started by the system (Always-on VPN) or by us: either way, remember it is on.
             getSharedPreferences(BootReceiver.PREFS, MODE_PRIVATE)
                 .edit().putBoolean(BootReceiver.KEY_ENABLED, true).apply();
+            WatchdogJobService.schedule(this);
             upstreamPool = Executors.newFixedThreadPool(UPSTREAM_THREADS);
 
             workerThread = new Thread(this::runLoop, "PBlockVpnWorker");
