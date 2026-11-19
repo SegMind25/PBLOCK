@@ -86,7 +86,18 @@ All adult content is now blocked on every app and browser. See [`scripts/README.
 | **PBLOCK App (VPN mode)** | No | No | Local DNS-filtering VPN, SafeSearch forced, survives reboot. |
 | **PBLOCK App (root mode)** | Yes | No | Writes `/system/etc/hosts` and re-applies it on boot. |
 
-**Android APK:** download it from [Releases](../../releases). To make blocking permanent until a factory reset, follow [`docs/LOCK_MODE.md`](docs/LOCK_MODE.md). Roadmap: [`docs/ANDROID_PLAN.md`](docs/ANDROID_PLAN.md).
+### 📱 Android app: install guide
+
+1. Download the latest `PBLOCK-x.y.z.apk` from **[Releases](https://github.com/SegMind25/PBLOCK/releases/latest)**.
+2. Follow **[docs/INSTALL.md](docs/INSTALL.md)** step by step. It covers:
+   - getting past **"App blocked to protect your device"** (Install anyway, Play Protect, Samsung/Xiaomi/Oppo/Vivo blockers, or `adb install`)
+   - turning on protection
+   - **keeping it on after a restart** (Always-on VPN + Autostart)
+   - **Search Shield** ("This is not good for you" on adult searches), including Android 13+ "Allow restricted settings"
+   - troubleshooting
+3. Optional: make it permanent until factory reset with **[docs/LOCK_MODE.md](docs/LOCK_MODE.md)**.
+
+Roadmap: [`docs/ANDROID_PLAN.md`](docs/ANDROID_PLAN.md).
 
 ## Technology Stack
 

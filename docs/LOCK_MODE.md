@@ -30,6 +30,8 @@ What lock mode deliberately leaves alone:
 
 ## Step 1: Install and turn on blocking
 
+(New to PBLOCK? Do [INSTALL.md](INSTALL.md) steps 1–5 first. It covers the "App blocked" warning and restart-proofing.)
+
 1. Download `PBLOCK-x.y.z.apk` from the repo's **Releases** page on your phone and
    open it. Allow "install unknown apps" if asked.
 2. Open PBLOCK, **set a password**, then tap **Enable VPN blocking** and accept the

@@ -96,5 +96,12 @@ jobs:
           target_commitish: ${{ github.sha }}
           files: AndroidVersion/PBLOCK-*.apk
           body: |
-            **Install:** download `PBLOCK-*.apk` on your phone and open it.
-            **Lock mode (can't be removed without factory reset):** see [docs/LOCK_MODE.md](https://github.com/${{ github.repository }}/blob/main/docs/LOCK_MODE.md).
+            ### 📱 Install
+            1. Download `PBLOCK-${{ env.VERSION_NAME }}.apk` below on your phone and open it.
+            2. **"App blocked to protect your device"?** Tap *More details → Install anyway*, or follow the other fixes in the guide (it's a false alarm for blocker apps from outside the Play Store).
+            3. Set a password → **Turn on protection** → **Keep it on after restart** (Always-on VPN) → **Turn on Search Shield**.
+
+            **Full step-by-step guide:** [docs/INSTALL.md](https://github.com/${{ github.repository }}/blob/main/docs/INSTALL.md)
+            **Lock mode (can't be removed without factory reset):** [docs/LOCK_MODE.md](https://github.com/${{ github.repository }}/blob/main/docs/LOCK_MODE.md)
+
+            Updating? Install this APK over the old one; your settings are kept.
