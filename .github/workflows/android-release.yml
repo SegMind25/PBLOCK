@@ -1,11 +1,17 @@
 name: Android APK
 
-# Push a tag like v1.0.0 -> builds a signed PBLOCK.apk and attaches it to a GitHub Release.
-# Can also be run by hand from the Actions tab (APK is then uploaded as a run artifact).
+# Push a tag like v1.2.0 -> builds a signed PBLOCK.apk and attaches it to a GitHub Release.
+# Or run it from the Actions tab: enter a version (e.g. 1.2.0) to publish release v1.2.0
+# (the tag is created for you), or leave it empty for a test build (run artifact only).
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version, e.g. 1.2.0 (empty = test build, no release)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -42,6 +48,7 @@ jobs:
           PBLOCK_KEYSTORE_PASSWORD: ${{ secrets.PBLOCK_KEYSTORE_PASSWORD }}
           PBLOCK_KEY_ALIAS: ${{ secrets.PBLOCK_KEY_ALIAS }}
           PBLOCK_KEY_PASSWORD: ${{ secrets.PBLOCK_KEY_PASSWORD }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           # Empty secrets must not override the defaults in build.gradle
           [ -z "$PBLOCK_KEYSTORE_PASSWORD" ] && unset PBLOCK_KEYSTORE_PASSWORD
@@ -49,6 +56,8 @@ jobs:
           [ -z "$PBLOCK_KEY_PASSWORD" ] && unset PBLOCK_KEY_PASSWORD
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
             export VERSION_NAME="${GITHUB_REF_NAME#v}"
+          elif [ -n "$INPUT_VERSION" ]; then
+            export VERSION_NAME="${INPUT_VERSION#v}"
           else
             export VERSION_NAME="0.0.${GITHUB_RUN_NUMBER}-dev"
           fi
@@ -57,6 +66,7 @@ jobs:
           ./gradlew --no-daemon assembleRelease
           cp app/build/outputs/apk/release/PBLOCK.apk "PBLOCK-${VERSION_NAME}.apk"
           ls -la *.apk
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -64,9 +74,12 @@ jobs:
           path: AndroidVersion/PBLOCK-*.apk
 
       - name: Publish GitHub Release
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' || inputs.version != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ env.VERSION_NAME }}
+          name: PBLOCK ${{ env.VERSION_NAME }}
+          target_commitish: ${{ github.sha }}
           files: AndroidVersion/PBLOCK-*.apk
           body: |
             **Install:** download `PBLOCK-*.apk` on your phone and open it.
