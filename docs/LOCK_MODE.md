@@ -83,6 +83,7 @@ off.
 ## Updating PBLOCK later
 
 Install a newer `PBLOCK-x.y.z.apk` from Releases over the top; your settings stay.
+To publish a new release, change the number in `AndroidVersion/VERSION` (e.g. `1.2.0`) and push to `main`. GitHub builds the APK and creates release `v1.2.0`.
 Every release is signed with the same key, so updates always install.
 
 ## Battery and data use

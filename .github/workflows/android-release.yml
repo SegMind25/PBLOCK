@@ -1,11 +1,17 @@
 name: Android APK
 
-# Push a tag like v1.2.0 -> builds a signed PBLOCK.apk and attaches it to a GitHub Release.
-# Or run it from the Actions tab: enter a version (e.g. 1.2.0) to publish release v1.2.0
-# (the tag is created for you), or leave it empty for a test build (run artifact only).
+# Builds a signed PBLOCK.apk and publishes it as a GitHub Release. Three ways:
+#  1. Bump AndroidVersion/VERSION (e.g. 1.2.0) and push to main -> release v1.2.0
+#     (any other Android change on main just makes a test build artifact).
+#  2. Push a tag like v1.2.0.
+#  3. Actions tab -> Run workflow, with a version (empty = test build only).
 on:
   push:
     tags: ['v*']
+    branches: [main]
+    paths:
+      - 'AndroidVersion/**'
+      - '.github/workflows/android-release.yml'
   workflow_dispatch:
     inputs:
       version:
@@ -58,6 +64,11 @@ jobs:
             export VERSION_NAME="${GITHUB_REF_NAME#v}"
           elif [ -n "$INPUT_VERSION" ]; then
             export VERSION_NAME="${INPUT_VERSION#v}"
+            echo "PUBLISH=true" >> "$GITHUB_ENV"
+          elif [ "$GITHUB_EVENT_NAME" = "push" ] && [ -f VERSION ] \
+               && ! git ls-remote --exit-code --tags origin "v$(tr -d '[:space:]' < VERSION)" >/dev/null; then
+            export VERSION_NAME="$(tr -d '[:space:]' < VERSION)"
+            echo "PUBLISH=true" >> "$GITHUB_ENV"
           else
             export VERSION_NAME="0.0.${GITHUB_RUN_NUMBER}-dev"
           fi
@@ -74,7 +85,7 @@ jobs:
           path: AndroidVersion/PBLOCK-*.apk
 
       - name: Publish GitHub Release
-        if: github.ref_type == 'tag' || inputs.version != ''
+        if: github.ref_type == 'tag' || env.PUBLISH == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSION_NAME }}
