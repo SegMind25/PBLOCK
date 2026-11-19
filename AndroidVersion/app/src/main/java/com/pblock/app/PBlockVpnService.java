@@ -115,6 +115,9 @@ public class PBlockVpnService extends VpnService {
         if (!running.get()) {
             startVpnInternal();
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            alwaysOn = isAlwaysOn(); // refresh: the user may have just switched Always-on
+        }
         return START_STICKY;
     }
 

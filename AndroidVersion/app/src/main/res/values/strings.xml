@@ -30,6 +30,8 @@
     <string name="hero_off_sub">Turn on protection to block adult sites\nacross every app and browser.</string>
     <string name="hero_on_title">You\'re protected</string>
     <string name="hero_on_sub">Adult sites are blocked and SafeSearch is on.\nKeep going, one day at a time.</string>
+    <string name="hero_warn_title">On, but not after restart</string>
+    <string name="hero_warn_sub">⚠️ Protection turns OFF when the phone restarts.\nTap here to fix it (1 minute).</string>
     <string name="hero_locked_sub">Lock mode is on. Protection can\'t be\nturned off or uninstalled. Stay strong.</string>
     <string name="hero_need_password">Set a password below first,\nthen turn on protection.</string>
     <string name="stat_days">days protected</string>

@@ -155,6 +155,14 @@ public class MainActivity extends AppCompatActivity {
         updateVpnButton();
         autoPromptDeviceAdmin();
         ensureLockedVpnRunning();
+        if (PBlockVpnService.isRunning()) {
+            // Ping the running service so it re-checks Always-on (user may be back from Settings)
+            try {
+                startService(new Intent(this, PBlockVpnService.class));
+            } catch (Exception ignored) {
+            }
+            mainHandler.postDelayed(this::showStatusAsync, 600);
+        }
         showStatusAsync();
     }
 
@@ -556,14 +564,16 @@ public class MainActivity extends AppCompatActivity {
     private void startVpnBlocking() {
         setVpnUserEnabled(true);
         startService(new Intent(this, PBlockVpnService.class));
-        Toast.makeText(this,
-            "VPN blocking enabled! It will stay on and restart after reboot.",
-            Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "Protection is ON", Toast.LENGTH_SHORT).show();
         updateVpnButton();
         showStatusAsync();
         // The service takes a moment to establish the tunnel; refresh once it's up.
         mainHandler.postDelayed(() -> { updateVpnButton(); showStatusAsync(); }, 1500);
         requestBatteryExemption();
+        // Without Always-on VPN the phone won't restart PBLOCK after a reboot: insist on it.
+        mainHandler.postDelayed(() -> {
+            if (!isFinishing() && !isAlwaysOnVpnEnabled() && !isLocked()) showRestartSetup();
+        }, 2500);
     }
 
     private void requestBatteryExemption() {
@@ -1065,12 +1075,20 @@ public class MainActivity extends AppCompatActivity {
         }
         long days = since == 0 ? 0 : (System.currentTimeMillis() - since) / 86_400_000L;
 
+        // Protected now but NOT restart-proof: amber warning until Always-on VPN is on.
+        boolean restartProof = locked || isAlwaysOnVpnEnabled();
+        boolean warn = active && !restartProof;
         heroRing.setBackgroundResource(locked && active ? R.drawable.bg_hero_locked
+            : warn ? R.drawable.bg_hero_warn
             : active ? R.drawable.bg_hero_on : R.drawable.bg_hero_off);
-        heroTitle.setText(active ? R.string.hero_on_title : R.string.hero_off_title);
+        heroTitle.setText(warn ? R.string.hero_warn_title
+            : active ? R.string.hero_on_title : R.string.hero_off_title);
         heroSubtitle.setText(locked && active ? R.string.hero_locked_sub
+            : warn ? R.string.hero_warn_sub
             : active ? R.string.hero_on_sub
             : hasPassword ? R.string.hero_off_sub : R.string.hero_need_password);
+        heroRing.setOnClickListener(warn ? v -> showRestartSetup() : null);
+        heroSubtitle.setOnClickListener(warn ? v -> showRestartSetup() : null);
 
         lockPill.setText(locked ? R.string.pill_locked : R.string.pill_unlocked);
         lockPill.setTextColor(ContextCompat.getColor(this, locked ? R.color.accent : R.color.textSub));
@@ -1105,6 +1123,7 @@ public class MainActivity extends AppCompatActivity {
                 + "Also tap \"Autostart\" and allow PBLOCK to start automatically / "
                 + "run in background, if your phone has that setting.")
             .setPositiveButton("Open VPN settings", (d, w) -> openFirst(
+                new Intent(android.provider.Settings.ACTION_VPN_SETTINGS),
                 new Intent("android.net.vpn.SETTINGS"),
                 new Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS)))
             .setNeutralButton("Autostart + battery", (d, w) -> {
