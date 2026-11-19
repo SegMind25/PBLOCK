@@ -27,7 +27,8 @@ shot() { adb exec-out screencap -p > "$OUT/$1.png" 2>/dev/null || true; }
 sh_() { adb shell "$@" 2>&1 | tr -d '\r'; }
 
 resolve() { # host -> IP as resolved on the device (via ping's first line)
-  sh_ ping -c 1 -W 3 "$1" | head -1 | sed -n 's/.*(\([0-9a-f.:]*\)).*/\1/p'
+  # first line looks like: PING host (1.2.3.4) 56(84) bytes of data.  -> take the FIRST (...)
+  sh_ ping -c 1 -W 3 "$1" | head -1 | sed -n 's/^PING [^ ]* (\([^)]*\)).*/\1/p'
 }
 vpn_up()      { sh_ ip addr show tun0 | grep -q 10.111.222.1; }
 porn_blocked() {
@@ -83,7 +84,7 @@ $UI tap "Save password"
 $UI tap "Confirm password" && sh_ input text testpass123
 $UI tap "Set"
 sleep 2
-sh_ input swipe 540 700 540 1800 300 >/dev/null   # scroll back to top
+sh_ input swipe 540 600 540 2000 300 >/dev/null   # scroll back to top
 sleep 1
 shot 02-password-set
 $UI tap "Turn on protection"

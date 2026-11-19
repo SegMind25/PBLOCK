@@ -43,7 +43,10 @@ def find(nodes, key):
             by_id = n
         if contains is None and k in text:
             contains = n
-    return exact or by_id or contains
+    for n in (exact, by_id, contains):
+        if n is not None:
+            return n
+    return None
 
 
 def center(node):
@@ -64,7 +67,7 @@ def main():
             print(f"ui: {action} '{key}' OK")
             return 0
         if i % 2 == 1:
-            adb("shell", "input", "swipe", "540", "1600", "540", "700", "300")
+            adb("shell", "input", "swipe", "540", "1800", "540", "700", "300")
         time.sleep(1.5)
     print(f"ui: {action} '{key}' NOT FOUND")
     return 1
