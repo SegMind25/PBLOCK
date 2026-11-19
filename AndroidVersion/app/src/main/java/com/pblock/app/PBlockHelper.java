@@ -136,6 +136,11 @@ public class PBlockHelper {
             + BING_DOMAINS.size() + BLOCKED_SEARCH_ENGINES.size() + DOH_DOMAINS.size();
     }
 
+    /** Adult sites only (no search engines / DNS resolvers), used by Search Shield. */
+    public static List<String> getAdultDomains() {
+        return BLOCKED_DOMAINS;
+    }
+
     public static List<String> getBlockedDomainsForVpn() {
         List<String> all = new java.util.ArrayList<>(BLOCKED_DOMAINS);
         all.addAll(BLOCKED_SEARCH_ENGINES);

@@ -38,8 +38,38 @@ public class SearchShieldService extends AccessibilityService {
             + "|erotic\\w*|sexting|sex ?(video|videos|movie|movies|tape|cam|chat|clip|clips|pics?)"
             + "|(hot|free|live|real) ?sex|anal ?sex|lesbian ?sex|strip ?tease"
             + "|سكس|نيك|افلام ?سكس|بورن"
+            // spaced spellings of platform names
+            + "|only ?fans|x ?videos?|x ?hamster|x ?nxx|chatur ?bate|spank ?bang|red ?tube"
+            + "|strip ?chat|bonga ?cams|cam ?soda|live ?jasmin|my ?free ?cams|many ?vids"
             + ")(?![\\p{L}\\d])",
         Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+
+    // Site-name stems that are also everyday words, so only their full domain is matched.
+    private static final java.util.Set<String> COMMON_WORDS = new java.util.HashSet<>(
+        java.util.Arrays.asList("shameless", "motherless", "bellesa", "fantasti", "ok",
+            "fux", "beeg", "sex", "porn", "palimas", "tiava", "wetplace", "pinkrod",
+            "hotscope", "movieshark", "proporn", "sexu", "xbabe", "xcafe", "tjoob",
+            "fuq", "ixxx", "txxx", "megatube", "freeones", "literotica", "imagefap"));
+
+    /** Every adult platform on the blocklist: "spankbang", "chaturbate.com", ... */
+    private static final Pattern SITES = buildSitePattern();
+
+    private static Pattern buildSitePattern() {
+        StringBuilder alt = new StringBuilder();
+        for (String domain : PBlockHelper.getAdultDomains()) {
+            String d = domain.toLowerCase(Locale.ROOT).trim();
+            if (d.isEmpty() || d.contains("/")) continue;
+            if (alt.length() > 0) alt.append('|');
+            alt.append(Pattern.quote(d));                           // full domain
+            int dot = d.indexOf('.');
+            String stem = dot > 0 ? d.substring(0, dot) : d;
+            if (stem.length() >= 5 && !COMMON_WORDS.contains(stem)) {
+                alt.append('|').append(Pattern.quote(stem));        // platform name
+            }
+        }
+        return Pattern.compile("(?<![\\p{L}\\d])(" + alt + ")(?![\\p{L}\\d])",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+    }
 
     private long lastScan;
     private long lastTrigger;
@@ -98,7 +128,7 @@ public class SearchShieldService extends AccessibilityService {
         } catch (Exception ignored) {
         }
         s = s.toLowerCase(Locale.ROOT).replace('_', ' ').replace('-', ' ');
-        return BAD.matcher(s).find();
+        return BAD.matcher(s).find() || SITES.matcher(s).find();
     }
 
     private void trigger(long now) {

@@ -94,7 +94,7 @@ If protection ever fails to start after a reboot, PBLOCK shows the notification
 ## 5. Turn on Search Shield
 
 When you search for adult content in Chrome, Google or another browser, Search Shield
-closes the page and shows **"This is not good for you"**.
+closes the page and pops up **"⚠️ This is harmful for you"**. This includes searches for any adult platform on the blocklist (e.g. "spankbang", "chaturbate.com", "only fans").
 
 1. In PBLOCK tap **Turn on Search Shield** → **Open settings**.
 2. Find **PBLOCK Search Shield** (it may be under *Installed apps* or *Downloaded apps*)

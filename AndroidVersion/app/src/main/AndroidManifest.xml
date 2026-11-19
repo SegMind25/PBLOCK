@@ -81,7 +81,7 @@
             android:noHistory="true"
             android:launchMode="singleTask"
             android:taskAffinity="com.pblock.app.stop"
-            android:theme="@style/UninstallProtectionTheme" />
+            android:theme="@style/PBlockPopupTheme" />
 
         <service
             android:name=".SearchShieldService"

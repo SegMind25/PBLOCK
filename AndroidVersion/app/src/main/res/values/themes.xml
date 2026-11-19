@@ -19,6 +19,14 @@
     </style>
 
     <!-- Reusable text/button styles for the dashboard -->
+    <!-- See-through window so the warning pops up over the screen -->
+    <style name="PBlockPopupTheme" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Dialog</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+    </style>
+
     <!-- Root of the PB.* styles: dotted names inherit from this implicitly -->
     <style name="PB" />
 

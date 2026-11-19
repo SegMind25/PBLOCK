@@ -13,7 +13,7 @@ import android.widget.TextView;
 
 import java.util.Random;
 
-/** Full-screen "This is not good for you" interruption shown by {@link SearchShieldService}. */
+/** Pop-up warning "This is harmful for you" shown by {@link SearchShieldService}. */
 public class StopActivity extends Activity {
 
     private static final String[] LINES = {
@@ -30,25 +30,38 @@ public class StopActivity extends Activity {
         super.onCreate(savedInstanceState);
         float d = getResources().getDisplayMetrics().density;
 
+        // Dimmed screen with a centered warning card ("pop-up").
+        android.widget.FrameLayout screen = new android.widget.FrameLayout(this);
+        screen.setBackgroundColor(Color.parseColor("#D9000000"));
+
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.CENTER);
-        root.setPadding((int) (32 * d), (int) (32 * d), (int) (32 * d), (int) (32 * d));
-        root.setBackgroundColor(Color.parseColor("#0B1020"));
+        root.setPadding((int) (24 * d), (int) (28 * d), (int) (24 * d), (int) (16 * d));
+        GradientDrawable card = new GradientDrawable();
+        card.setColor(Color.parseColor("#151B2E"));
+        card.setCornerRadius(24 * d);
+        card.setStroke((int) (2 * d), Color.parseColor("#EF4444"));
+        root.setBackground(card);
+        android.widget.FrameLayout.LayoutParams cardLp = new android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
+        cardLp.leftMargin = cardLp.rightMargin = (int) (24 * d);
+        screen.addView(root, cardLp);
 
         TextView icon = new TextView(this);
-        icon.setText("✋");
-        icon.setTextSize(72);
+        icon.setText("\u26A0\uFE0F");
+        icon.setTextSize(56);
         icon.setGravity(Gravity.CENTER);
         root.addView(icon);
 
         TextView title = new TextView(this);
-        title.setText("This is not good for you");
-        title.setTextSize(28);
+        title.setText("This is harmful for you");
+        title.setTextSize(24);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setTextColor(Color.parseColor("#E8ECF6"));
         title.setGravity(Gravity.CENTER);
-        title.setPadding(0, (int) (20 * d), 0, (int) (12 * d));
+        title.setPadding(0, (int) (12 * d), 0, (int) (10 * d));
         root.addView(title);
 
         TextView msg = new TextView(this);
@@ -72,7 +85,7 @@ public class StopActivity extends Activity {
         back.setStateListAnimator(null);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, (int) (56 * d));
-        lp.topMargin = (int) (36 * d);
+        lp.topMargin = (int) (24 * d);
         root.addView(back, lp);
         back.setOnClickListener(v -> goHome());
 
@@ -90,7 +103,7 @@ public class StopActivity extends Activity {
             finish();
         });
 
-        setContentView(root);
+        setContentView(screen);
     }
 
     @Override
