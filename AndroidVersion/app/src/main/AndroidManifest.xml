@@ -74,6 +74,15 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="DNS-based content filtering for family safety" />
+            <!-- Required for Android to list PBLOCK as a VPN app that supports
+                 "Always-on VPN" (Settings + device-owner lock mode + start at boot).
+                 Without it Settings shows "Always-on VPN: Not supported by this app". -->
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.net.VpnService.SUPPORTS_ALWAYS_ON"
+                android:value="true" />
         </service>
 
         <activity
