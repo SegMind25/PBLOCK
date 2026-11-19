@@ -17,4 +17,5 @@
     <color name="textSub">#6B7280</color>
     <color name="screenBg">#EEF2F7</color>
     <color name="cardStroke">#D0D7DE</color>
+    <color name="protectionBg">#0F0F23</color>
 </resources>

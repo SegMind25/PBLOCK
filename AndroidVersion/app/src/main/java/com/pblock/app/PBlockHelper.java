@@ -53,7 +53,7 @@ public class PBlockHelper {
         "tubewolf.com", "vintagetube.xxx", "voyeurhit.com",
         "wetplace.com", "worldsex.com", "xbabe.com",
         "xcafe.com", "xmoviesforyou.com", "xxxdan.com",
-        "xxxtentacion.org", "yourlust.com", "yuvutu.com",
+        "yourlust.com", "yuvutu.com",
         "zedporn.com"
     );
 

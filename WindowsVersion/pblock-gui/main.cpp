@@ -9,8 +9,10 @@
 #include <algorithm>
 #include <cmath>
 
+#ifdef _MSC_VER  // MinGW links comctl32 via the Makefile and embeds the manifest via pblock.rc
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+#endif
 
 static const char* APP_TITLE = "PBLOCK - Family Safety";
 static const int WIN_W = 600, WIN_H = 780;
@@ -85,7 +87,7 @@ static HWND g_hMsg = NULL;
 static HWND g_hProgress = NULL;
 static HWND g_hF1Btns[SLOTS] = {};
 static HWND g_hRunBtn = NULL, g_hResetBtn = NULL;
-static HWND g_hStatusIcon = NULL, g_hStatusLabel = NULL;
+static HWND g_hStatusLabel = NULL;
 static HWND g_hEnableBtn = NULL, g_hDisableBtn = NULL;
 static HWND g_hPwEntry = NULL, g_hPwConfirm = NULL, g_hPwSetBtn = NULL, g_hPwMsg = NULL, g_hSettingsBtn = NULL;
 static HWND g_hStack[3] = {};

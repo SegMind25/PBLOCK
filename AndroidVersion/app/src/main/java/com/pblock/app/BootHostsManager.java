@@ -7,7 +7,6 @@ import android.util.Log;
 import java.io.BufferedReader;
 import java.io.DataOutputStream;
 import java.io.File;
-import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.InputStreamReader;
 
@@ -157,19 +156,8 @@ public class BootHostsManager {
             process = Runtime.getRuntime().exec("su");
             final Process proc = process;
 
-            java.io.DataOutputStream os = new java.io.DataOutputStream(process.getOutputStream());
-            os.write(commands.getBytes("UTF-8"));
-            os.writeBytes("\nexit\n");
-            os.flush();
-
-            StringBuilder outBuf = new StringBuilder();
-            BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream()));
-            String line;
-            while ((line = reader.readLine()) != null) {
-                outBuf.append(line).append('\n');
-            }
-
+            // Drain stderr concurrently: if it fills its pipe while we block on
+            // stdout, su never exits and this thread hangs forever.
             StringBuilder errBuf = new StringBuilder();
             Thread errThread = new Thread(() -> {
                 try (BufferedReader r = new BufferedReader(
@@ -182,6 +170,19 @@ public class BootHostsManager {
                 }
             });
             errThread.start();
+
+            DataOutputStream os = new DataOutputStream(process.getOutputStream());
+            os.write(commands.getBytes("UTF-8"));
+            os.writeBytes("\nexit\n");
+            os.flush();
+
+            StringBuilder outBuf = new StringBuilder();
+            BufferedReader reader = new BufferedReader(
+                new InputStreamReader(process.getInputStream()));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                outBuf.append(line).append('\n');
+            }
 
             result.exitCode = process.waitFor();
             errThread.join(2000);

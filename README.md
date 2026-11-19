@@ -21,26 +21,21 @@ PBLOCK/
 ├── WindowsVersion/
 │   └── mainPBLOCK.cpp           # Windows CLI tool (C++)
 │
-├── AndroidVersion/              # Android app (Java + C++ JNI)
-│   ├── build.gradle
-│   ├── settings.gradle
-│   ├── gradle.properties
-│   ├── setup.sh
-│   ├── app/
-│   │   ├── build.gradle
-│   │   └── src/main/
-│   │       ├── AndroidManifest.xml
-│   │       ├── cpp/
-│   │       │   ├── CMakeLists.txt
-│   │       │   └── mainPBLOCK.cpp       # Native JNI code
-│   │       ├── java/com/pblock/app/
-│   │       │   └── MainActivity.java    # Android UI + logic
-│   │       └── res/
-│   │           ├── layout/activity_main.xml
-│   │           └── values/
-│   │               ├── strings.xml
-│   │               └── colors.xml
-│   └── gradle/wrapper/
+├── AndroidVersion/              # Android app (Java, no root needed)
+│   ├── build.gradle / settings.gradle / gradle.properties
+│   └── app/src/main/
+│       ├── AndroidManifest.xml
+│       ├── java/com/pblock/app/
+│       │   ├── MainActivity.java             # UI, password, unlock challenges
+│       │   ├── PBlockVpnService.java         # Local DNS-filtering VPN (no root)
+│       │   ├── PBlockService.java            # Foreground protection watchdog
+│       │   ├── BootReceiver.java             # Restarts blocking after reboot
+│       │   ├── BootHostsManager.java         # Root mode: hosts file re-apply
+│       │   ├── PBlockDeviceAdminReceiver.java# Uninstall protection
+│       │   ├── UninstallProtectionActivity.java, *PuzzleDialog.java
+│       │   ├── ConsoleActivity.java          # Root console (root mode only)
+│       │   └── PBlockHelper.java             # Blocklist + hosts helpers
+│       └── res/                              # layouts, strings, themes, icons
 │
 └── scripts/                     # NSFW blocking scripts (no root needed)
     ├── README.md                # Detailed usage instructions
@@ -88,16 +83,17 @@ All adult content is now blocked on every app and browser. See [`scripts/README.
 |--------|:---:|:---:|---------|
 | **Private DNS** | No | No | Set a family-safe DNS on your phone. [Guide](scripts/README.md#method-1-private-dns-recommended---no-root-needed) |
 | **ADB Hosts File** | No | Yes | Push a blocking hosts file via USB. [Guide](scripts/README.md#method-2-adb-hosts-file-no-root-needed-requires-computer) |
-| **PBLOCK App** | Yes | No | Full app with password protection. See below. |
+| **PBLOCK App (VPN mode)** | No | No | Local DNS-filtering VPN, SafeSearch forced, survives reboot. |
+| **PBLOCK App (root mode)** | Yes | No | Writes `/system/etc/hosts` and re-applies it on boot. |
+
+See [`docs/ANDROID_PLAN.md`](docs/ANDROID_PLAN.md) for the Android roadmap.
 
 ## Technology Stack
 
 - **C++17** - Core blocking logic (all platforms)
-- **JNI (Java Native Interface)** - Android native integration
-- **Java** - Android app UI and system interaction
-- **Android SDK 35** - Android build target
-- **CMake 3.22** - Native build system for Android
-- **Gradle 8.x** - Android build tool
+- **Java** - Android app (VpnService DNS filter, device admin, foreground services)
+- **Android SDK 35** - Android build target (minSdk 21)
+- **Gradle 8.8 + Android Gradle Plugin 8.5** - Android build tool (JDK 17+)
 
 ## Prerequisites
 
@@ -109,10 +105,10 @@ All adult content is now blocked on every app and browser. See [`scripts/README.
 - **MSVC** or **MinGW** with C++17 support
 - **Administrator privileges** (required to modify the hosts file)
 
-### Android (App - requires root)
-- **Android Studio** or Android SDK
-- **NDK** (for native C++ compilation)
-- **Rooted device** (required to modify `/system/etc/hosts`)
+### Android (App)
+- **Android Studio** or the Android SDK, with **JDK 17+**
+- Any Android 5.0+ phone. Root is optional: without it the app uses VPN mode;
+  with it, the app also writes `/system/etc/hosts`.
 
 ### Android (Scripts - no root required)
 - **Android 9+** for Private DNS method (no other requirements)
@@ -151,7 +147,7 @@ chmod +x gradlew
 # Or open the project in Android Studio
 ```
 
-The APK will be generated at `AndroidVersion/app/build/outputs/apk/debug/app-debug.apk`.
+The APK will be generated at `AndroidVersion/app/build/outputs/apk/debug/PBLOCK.apk`.
 
 To install on your phone:
 1. Transfer the APK to your phone
@@ -175,7 +171,7 @@ See [`scripts/README.md`](scripts/README.md) for detailed instructions.
 
 ## Security Notes
 
-1. **Run with appropriate privileges** - Linux requires `sudo`, Windows requires Administrator, Android requires root (for the app)
+1. **Run with appropriate privileges** - Linux requires `sudo`, Windows requires Administrator; the Android app needs root only for hosts-file mode
 2. **Use a strong password** - Minimum 8 characters, write it down somewhere safe
 3. **The 30-second delay is intentional** - It gives you time to reconsider before unblocking
 4. **Hosts file modification** - This app modifies system files; back up your hosts file before first use

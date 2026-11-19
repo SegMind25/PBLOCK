@@ -276,7 +276,7 @@ int getSequenceAnswer(int start, int step, int pos) {
     return start + step * pos;
 }
 
-Puzzle generatePuzzle(std::mt19937& rng, int difficulty) {
+Puzzle generatePuzzle(std::mt19937& rng, int /*difficulty*/) {
     Puzzle p;
     int type = rng() % 10;
     

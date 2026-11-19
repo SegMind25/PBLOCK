@@ -279,7 +279,7 @@ int getSequenceAnswer(int start, int step, int pos) {
     return start + step * pos;
 }
 
-Puzzle generatePuzzle(std::mt19937& rng, int difficulty) {
+Puzzle generatePuzzle(std::mt19937& rng, int /*difficulty*/) {
     Puzzle p;
     int type = rng() % 10;
     
@@ -479,7 +479,10 @@ void blockContent() {
     hosts.close();
 
     // Flush DNS cache
-    system("systemd-resolve --flush-caches 2>/dev/null || nscd -i hosts 2>/dev/null || true");
+    if (system("resolvectl flush-caches 2>/dev/null || systemd-resolve --flush-caches 2>/dev/null "
+               "|| nscd -i hosts 2>/dev/null || true") != 0) {
+        // Cache flush is best-effort; blocking still applies once caches expire.
+    }
 
     int total = blocked_domains.size() + google_domains.size() + bing_domains.size() + blocked_search_engines.size();
     std::cout << "✓ Content blocking activated.\n";

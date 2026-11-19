@@ -36,7 +36,7 @@ Needs JDK 17 and the Android SDK (`ANDROID_HOME` set, or `sdk.dir` in
 `AndroidVersion/local.properties`).
 
 ```bash
-cd AndroidVersion && ./gradlew assembleDebug   # -> app/build/outputs/apk/debug/app-debug.apk
+cd AndroidVersion && ./gradlew assembleDebug   # -> app/build/outputs/apk/debug/PBLOCK.apk
 ```
 
 If no SDK is available, say the Android build was not verified instead of
@@ -45,4 +45,4 @@ claiming it passes.
 ## After building
 
 Run `make clean` in each GUI directory (or delete the outputs) so binaries
-aren't committed; `.gitignore` covers the Linux outputs only.
+aren't committed (`.gitignore` covers all build outputs as a safety net).

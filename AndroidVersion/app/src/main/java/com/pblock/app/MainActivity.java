@@ -473,62 +473,6 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void startHostsDisableCountdown() {
-        isCountingDown.set(true);
-        setButtonsEnabled(false);
-        executor.execute(() -> {
-            try {
-                for (int i = 30; i > 0; i--) {
-                    if (Thread.currentThread().isInterrupted()) {
-                        mainHandler.post(() -> {
-                            setButtonsEnabled(true);
-                            isCountingDown.set(false);
-                        });
-                        return;
-                    }
-                    final int count = i;
-                    mainHandler.post(() ->
-                        statusText.setText(count + " seconds remaining...\n"
-                            + "Use this time to reconsider."));
-                    Thread.sleep(1000);
-                }
-
-                String hosts = readHostsViaSu();
-                boolean ok;
-                if (hosts.contains(PBlockHelper.BLOCK_START_MARKER)) {
-                    ok = writeHostsViaSu(PBlockHelper.removeBlockSection(hosts));
-                    ok = ok && !isHostsBlocked();
-                } else {
-                    ok = true;
-                }
-
-                final boolean success = ok;
-                mainHandler.post(() -> {
-                    Toast.makeText(this, success
-                            ? "Root blocking removed."
-                            : "Failed to remove blocking (hosts not writable).",
-                        Toast.LENGTH_LONG).show();
-                    passwordInput.setText("");
-                    isCountingDown.set(false);
-                    setButtonsEnabled(true);
-                    showStatusAsync();
-                });
-            } catch (InterruptedException e) {
-                mainHandler.post(() -> {
-                    setButtonsEnabled(true);
-                    isCountingDown.set(false);
-                });
-            } catch (Exception e) {
-                Log.e(TAG, "unblock error: " + e.getMessage());
-                mainHandler.post(() -> {
-                    Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show();
-                    isCountingDown.set(false);
-                    setButtonsEnabled(true);
-                });
-            }
-        });
-    }
-
     private void promptOwnerUnlock() {
         if (!PBlockVpnService.isRunning() || isCountingDown.get()) {
             return;
@@ -541,58 +485,6 @@ public class MainActivity extends AppCompatActivity {
             .edit()
             .putBoolean(BootReceiver.KEY_ENABLED, enabled)
             .apply();
-    }
-
-    private void startDisableCountdown() {
-        isCountingDown.set(true);
-        statusText.setText("Disabling in 30 seconds...\nUse this time to reconsider.");
-        setButtonsEnabled(false);
-
-        executor.execute(() -> {
-            try {
-                for (int i = 30; i > 0; i--) {
-                    if (Thread.currentThread().isInterrupted()) {
-                        mainHandler.post(() -> {
-                            setButtonsEnabled(true);
-                            isCountingDown.set(false);
-                        });
-                        return;
-                    }
-                    final int count = i;
-                    mainHandler.post(() ->
-                        statusText.setText(count + " seconds remaining...\n"
-                            + "Use this time to reconsider."));
-                    Thread.sleep(1000);
-                }
-
-                Intent stopIntent = new Intent(this, PBlockVpnService.class);
-                stopIntent.setAction(PBlockVpnService.ACTION_STOP);
-                startService(stopIntent);
-
-                mainHandler.post(() -> {
-                    Toast.makeText(this, "VPN blocking disabled.", Toast.LENGTH_LONG).show();
-                    passwordInput.setText("");
-                    isCountingDown.set(false);
-                    setVpnUserEnabled(false);
-                    setButtonsEnabled(true);
-                    updateVpnButton();
-                    showStatusAsync();
-                });
-            } catch (InterruptedException e) {
-                Log.w(TAG, "Countdown interrupted");
-                mainHandler.post(() -> {
-                    setButtonsEnabled(true);
-                    isCountingDown.set(false);
-                });
-            } catch (Exception e) {
-                Log.e(TAG, "Disable error: " + e.getMessage());
-                mainHandler.post(() -> {
-                    Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show();
-                    setButtonsEnabled(true);
-                    isCountingDown.set(false);
-                });
-            }
-        });
     }
 
     private void startVpnBlocking() {
@@ -988,11 +880,6 @@ public class MainActivity extends AppCompatActivity {
         } catch (Exception e) {
             Log.e(TAG, "Failed to start foreground service: " + e.getMessage());
         }
-    }
-
-    private void stopForegroundService() {
-        Intent serviceIntent = new Intent(this, PBlockService.class);
-        stopService(serviceIntent);
     }
 
     private void setButtonsEnabled(boolean enabled) {

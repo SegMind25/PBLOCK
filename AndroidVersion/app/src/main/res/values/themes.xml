@@ -11,8 +11,8 @@
 
     <style name="UninstallProtectionTheme" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowFullscreen">true</item>
-        <item name="android:statusBarColor">#0F0F23</item>
-        <item name="android:navigationBarColor">#0F0F23</item>
-        <item name="android:windowBackground">#0F0F23</item>
+        <item name="android:statusBarColor">@color/protectionBg</item>
+        <item name="android:navigationBarColor">@color/protectionBg</item>
+        <item name="android:windowBackground">@color/protectionBg</item>
     </style>
 </resources>

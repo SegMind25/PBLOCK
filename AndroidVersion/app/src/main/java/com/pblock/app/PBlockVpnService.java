@@ -20,6 +20,9 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class PBlockVpnService extends VpnService {
@@ -31,7 +34,9 @@ public class PBlockVpnService extends VpnService {
     private static final int VPN_NOTIFICATION_ID = 2;
 
     private static final String FAKE_DNS_V4 = "10.111.222.3";
-    private static final String UPSTREAM_DNS_V4 = "8.8.8.8";
+    private static final String[] UPSTREAM_DNS_V4 = {"8.8.8.8", "1.1.1.1"};
+    private static final String FAKE_DNS_V6 = "fdfe:dcba:9876::3";
+    private static final int UPSTREAM_THREADS = 8;
     private static final String GOOGLE_SAFESEARCH_IP = "216.239.38.120";
     private static final String BING_STRICT_IP = "204.79.197.220";
     private static final int MTU = 1500;
@@ -41,6 +46,7 @@ public class PBlockVpnService extends VpnService {
 
     private Thread workerThread;
     private ParcelFileDescriptor tunInterface;
+    private ExecutorService upstreamPool;
 
     private static HashSet<String> blockedSet;
     private static HashSet<String> googleSet;
@@ -115,8 +121,8 @@ public class PBlockVpnService extends VpnService {
                 .addDnsServer(FAKE_DNS_V4)
                 .addRoute(FAKE_DNS_V4, 32)
                 .addAddress("fdfe:dcba:9876::1", 126)
-                .addDnsServer("fdfe:dcba:9876::3")
-                .addRoute("fdfe:dcba:9876::3", 128);
+                .addDnsServer(FAKE_DNS_V6)
+                .addRoute(FAKE_DNS_V6, 128);
 
             tunInterface = builder.establish();
             if (tunInterface == null) {
@@ -126,6 +132,7 @@ public class PBlockVpnService extends VpnService {
             }
 
             running.set(true);
+            upstreamPool = Executors.newFixedThreadPool(UPSTREAM_THREADS);
 
             workerThread = new Thread(this::runLoop, "PBlockVpnWorker");
             workerThread.start();
@@ -177,7 +184,7 @@ public class PBlockVpnService extends VpnService {
         int destPort = ((packet[ihl + 2] & 0xFF) << 8) | (packet[ihl + 3] & 0xFF);
         if (destPort != 53 || udpLen < 12) return;
 
-        byte[] dnsQuery = Arrays.copyOfRange(packet, ihl + 8,
+        final byte[] dnsQuery = Arrays.copyOfRange(packet, ihl + 8,
             Math.min(length, ihl + udpLen));
 
         DnsResult result = processDns(dnsQuery);
@@ -192,8 +199,14 @@ public class PBlockVpnService extends VpnService {
         } else if (result.answerIp != null) {
             payload = buildEmptyNoErrorResponse(dnsQuery);
         } else {
-            payload = forwardUpstream(dnsQuery);
-            if (payload == null) return;
+            // Upstream lookups can take seconds; never block the tun read loop on them.
+            submitUpstream(() -> {
+                byte[] answer = forwardUpstream(dnsQuery);
+                if (answer != null) {
+                    writeIpv4Udp(answer, fakeDns, srcAddr, (short) 53, (short) srcPort, out);
+                }
+            });
+            return;
         }
 
         writeIpv4Udp(payload, fakeDns, srcAddr, (short) 53, (short) srcPort, out);
@@ -211,7 +224,7 @@ public class PBlockVpnService extends VpnService {
         int destPort = ((packet[udpStart + 2] & 0xFF) << 8) | (packet[udpStart + 3] & 0xFF);
         if (destPort != 53 || udpLen < 12) return;
 
-        byte[] dnsQuery = Arrays.copyOfRange(packet, udpStart + 8,
+        final byte[] dnsQuery = Arrays.copyOfRange(packet, udpStart + 8,
             Math.min(length, udpStart + udpLen));
 
         DnsResult result = processDns(dnsQuery);
@@ -220,8 +233,13 @@ public class PBlockVpnService extends VpnService {
         if (result.blocked || result.answerIp != null) {
             payload = buildEmptyNoErrorResponse(dnsQuery);
         } else {
-            payload = forwardUpstream(dnsQuery);
-            if (payload == null) return;
+            submitUpstream(() -> {
+                byte[] answer = forwardUpstream(dnsQuery);
+                if (answer != null) {
+                    writeIpv6Udp(answer, srcAddr, (short) 53, (short) srcPort, out);
+                }
+            });
+            return;
         }
 
         writeIpv6Udp(payload, srcAddr, (short) 53, (short) srcPort, out);
@@ -240,9 +258,11 @@ public class PBlockVpnService extends VpnService {
             result.qtype = qtype;
 
             String lower = qname.toLowerCase(Locale.US);
-            if (matchesSet(lower, googleSet)) {
+            // SafeSearch sets are exact host names: rewriting every *.google.com
+            // subdomain would break Gmail, Play Store, Drive, etc.
+            if (googleSet.contains(lower)) {
                 result.answerIp = GOOGLE_SAFESEARCH_IP;
-            } else if (matchesSet(lower, bingSet)) {
+            } else if (bingSet.contains(lower)) {
                 result.answerIp = BING_STRICT_IP;
             } else if (matchesSet(lower, blockedSet)) {
                 result.blocked = true;
@@ -252,13 +272,25 @@ public class PBlockVpnService extends VpnService {
         return result;
     }
 
+    /** True if qname or any parent domain of it is in the set (O(labels), not O(set)). */
     private boolean matchesSet(String qname, HashSet<String> set) {
-        for (String domain : set) {
-            if (qname.equals(domain) || qname.endsWith("." + domain)) {
-                return true;
-            }
+        String name = qname;
+        while (true) {
+            if (set.contains(name)) return true;
+            int dot = name.indexOf('.');
+            if (dot < 0) return false;
+            name = name.substring(dot + 1);
         }
-        return false;
+    }
+
+    private void submitUpstream(Runnable task) {
+        ExecutorService pool = upstreamPool;
+        if (pool == null) return;
+        try {
+            pool.execute(task);
+        } catch (RejectedExecutionException ignored) {
+            // VPN is shutting down
+        }
     }
 
     private String readQName(byte[] dns, int[] offset) {
@@ -281,20 +313,22 @@ public class PBlockVpnService extends VpnService {
         DatagramSocket socket = null;
         try {
             socket = new DatagramSocket();
-            socket.setSoTimeout(3000);
+            socket.setSoTimeout(2000);
             protect(socket);
 
-            InetAddress addr = InetAddress.getByName(UPSTREAM_DNS_V4);
-            socket.send(new DatagramPacket(dnsQuery, dnsQuery.length, addr, 53));
-
-            byte[] buf = new byte[2048];
-            DatagramPacket response = new DatagramPacket(buf, buf.length);
-            try {
-                socket.receive(response);
-            } catch (SocketTimeoutException e) {
-                return null;
+            byte[] buf = new byte[MTU - 48];
+            for (String upstream : UPSTREAM_DNS_V4) {
+                InetAddress addr = InetAddress.getByName(upstream);
+                socket.send(new DatagramPacket(dnsQuery, dnsQuery.length, addr, 53));
+                DatagramPacket response = new DatagramPacket(buf, buf.length);
+                try {
+                    socket.receive(response);
+                    return Arrays.copyOf(response.getData(), response.getLength());
+                } catch (SocketTimeoutException e) {
+                    // try the next upstream resolver
+                }
             }
-            return Arrays.copyOf(response.getData(), response.getLength());
+            return null;
         } catch (Exception e) {
             return null;
         } finally {
@@ -310,7 +344,7 @@ public class PBlockVpnService extends VpnService {
             int qEnd = findQuestionEnd(query);
             if (qEnd < 0) return buildEmptyNoErrorResponse(query);
 
-            out.write(Arrays.copyOfRange(query, 0, 12));
+            out.write(Arrays.copyOfRange(query, 0, 2));
             out.write((byte) 0x81);
             out.write((byte) 0x80);
             out.write(query[4]);
@@ -345,7 +379,7 @@ public class PBlockVpnService extends VpnService {
         try {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             int qEnd = findQuestionEnd(query);
-            out.write(Arrays.copyOfRange(query, 0, 12));
+            out.write(Arrays.copyOfRange(query, 0, 2));
             out.write((byte) 0x81);
             out.write((byte) 0x80);
             out.write(query[4]);
@@ -377,7 +411,7 @@ public class PBlockVpnService extends VpnService {
         }
     }
 
-    private void writeIpv4Udp(byte[] payload, byte[] srcAddr, byte[] dstAddr, short srcPort,
+    private synchronized void writeIpv4Udp(byte[] payload, byte[] srcAddr, byte[] dstAddr, short srcPort,
                               short dstPort, FileOutputStream out) {
         try {
             int totalLen = 20 + 8 + payload.length;
@@ -405,27 +439,43 @@ public class PBlockVpnService extends VpnService {
         }
     }
 
-    private void writeIpv6Udp(byte[] payload, byte[] dstAddr, short srcPort, short dstPort,
-                              FileOutputStream out) {
+    private synchronized void writeIpv6Udp(byte[] payload, byte[] dstAddr, short srcPort,
+                                           short dstPort, FileOutputStream out) {
         try {
             int totalLen = 40 + 8 + payload.length;
             ByteBuffer bb = ByteBuffer.allocate(totalLen);
-            bb.put((byte) 0x60);
-            bb.put((byte) 0x00);
-            bb.putShort((short) payload.length);
+            bb.putInt(0x60000000);                     // version 6, traffic class, flow label
+            bb.putShort((short) (8 + payload.length)); // payload length includes UDP header
             bb.put((byte) 17);
             bb.put((byte) 64);
-            bb.put(parseIp("fdfe:dcba:9876::3"));
+            byte[] srcAddr = parseIp(FAKE_DNS_V6);
+            bb.put(srcAddr);
             bb.put(dstAddr);
             bb.putShort(srcPort);
             bb.putShort(dstPort);
             bb.putShort((short) (8 + payload.length));
             bb.putShort((short) 0);
             bb.put(payload);
+            // A UDP checksum is mandatory over IPv6 (RFC 8200); a zero checksum is dropped.
+            bb.putShort(46, (short) udp6Checksum(bb.array(), srcAddr, dstAddr, 8 + payload.length));
             out.write(bb.array());
         } catch (Exception e) {
             Log.w(TAG, "write v6 error: " + e.getMessage());
         }
+    }
+
+    private int udp6Checksum(byte[] packet, byte[] src, byte[] dst, int udpLen) {
+        byte[] buf = new byte[40 + udpLen];
+        System.arraycopy(src, 0, buf, 0, 16);
+        System.arraycopy(dst, 0, buf, 16, 16);
+        buf[32] = (byte) (udpLen >>> 24);
+        buf[33] = (byte) (udpLen >>> 16);
+        buf[34] = (byte) (udpLen >>> 8);
+        buf[35] = (byte) udpLen;
+        buf[39] = 17;
+        System.arraycopy(packet, 40, buf, 40, udpLen);
+        int sum = checksum(buf, 0, buf.length);
+        return sum == 0 ? 0xFFFF : sum;
     }
 
     private int checksum(byte[] data, int offset, int length) {
@@ -477,6 +527,10 @@ public class PBlockVpnService extends VpnService {
         running.set(false);
         if (workerThread != null) {
             workerThread.interrupt();
+        }
+        if (upstreamPool != null) {
+            upstreamPool.shutdownNow();
+            upstreamPool = null;
         }
         try {
             if (tunInterface != null) {
