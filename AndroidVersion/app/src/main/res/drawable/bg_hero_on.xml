@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- soft outer glow ring -->
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#2222C55E" />
+        </shape>
+    </item>
+    <item android:top="14dp" android:bottom="14dp" android:left="14dp" android:right="14dp">
+        <shape android:shape="oval">
+            <gradient android:angle="270" android:startColor="#22C55E" android:endColor="#15803D" />
+        </shape>
+    </item>
+</layer-list>

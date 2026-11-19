@@ -52,6 +52,13 @@ public class MainActivity extends AppCompatActivity {
     private Button unblockBtn;
     private Button consoleBtn;
 
+    // Dashboard views
+    private View heroRing;
+    private TextView heroTitle, heroSubtitle, lockPill, streakValue, domainsValue,
+        safeSearchValue, quoteText, stepPassword, stepFilter, stepLock, advancedToggle;
+    private View advancedContainer;
+    private static final String KEY_PROTECTED_SINCE = "protected_since";
+
     private DevicePolicyManager devicePolicyManager;
     private ComponentName adminComponent;
 
@@ -96,6 +103,8 @@ public class MainActivity extends AppCompatActivity {
             return true;
         });
 
+        bindDashboard();
+
         LockdownManager.applyIfDeviceOwner(this);
 
         updateDeviceAdminUI();
@@ -132,6 +141,7 @@ public class MainActivity extends AppCompatActivity {
         updateVpnButton();
         autoPromptDeviceAdmin();
         ensureLockedVpnRunning();
+        showStatusAsync();
     }
 
     private boolean isLocked() {
@@ -171,6 +181,7 @@ public class MainActivity extends AppCompatActivity {
                 stopIntent.setAction(PBlockVpnService.ACTION_STOP);
                 startService(stopIntent);
                 setVpnUserEnabled(false);
+                resetStreak();
                 updateVpnButton();
                 showStatusAsync();
                 return;
@@ -432,6 +443,7 @@ public class MainActivity extends AppCompatActivity {
 
                 BootHostsManager hostsManager = new BootHostsManager(this);
                 hostsManager.saveRootBlockingState(false);
+                resetStreak();
 
                 boolean hostsOk = true;
                 if (hasRoot) {
@@ -521,6 +533,8 @@ public class MainActivity extends AppCompatActivity {
             Toast.LENGTH_LONG).show();
         updateVpnButton();
         showStatusAsync();
+        // The service takes a moment to establish the tunnel; refresh once it's up.
+        mainHandler.postDelayed(() -> { updateVpnButton(); showStatusAsync(); }, 1500);
         requestBatteryExemption();
     }
 
@@ -555,9 +569,14 @@ public class MainActivity extends AppCompatActivity {
         }
         if (PBlockVpnService.isRunning()) {
             vpnBtn.setText(R.string.btn_vpn_disable);
-            vpnBtn.setVisibility(View.VISIBLE);
+            vpnBtn.setBackgroundResource(R.drawable.btn_secondary);
+            vpnBtn.setTextColor(ContextCompat.getColor(this, R.color.textSub));
+            // In lock mode there is nothing to turn off: hide the button entirely.
+            vpnBtn.setVisibility(isLocked() ? View.GONE : View.VISIBLE);
         } else {
             vpnBtn.setText(R.string.btn_vpn_enable);
+            vpnBtn.setBackgroundResource(R.drawable.btn_success);
+            vpnBtn.setTextColor(0xFFFFFFFF);
             vpnBtn.setVisibility(View.VISIBLE);
         }
     }
@@ -931,6 +950,7 @@ public class MainActivity extends AppCompatActivity {
                     .append("Protection Service: ").append(serviceRunning ? "RUNNING" : "STOPPED").append("\n")
                     .append("Boot Persistence: ").append(bootPersistence ? "ENABLED" : "DISABLED").append("\n");
                 statusText.setText(s.toString());
+                updateDashboard(vpnActive || hostsBlocked, locked, domainCount);
             });
         });
     }
@@ -943,6 +963,195 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         return false;
+    }
+
+    // ---------------------------------------------------------------- dashboard
+
+    private static final String[] QUOTES = {
+        "\u201CEvery day you stay clean is a win.\u201D",
+        "\u201CThe urge is a wave. It rises, peaks, and passes.\u201D",
+        "\u201CYou are not your urges. You are the one who chooses.\u201D",
+        "\u201CDiscipline is choosing what you want most over what you want now.\u201D",
+        "\u201CSmall wins, every day, add up to a new life.\u201D",
+        "\u201CFall seven times, stand up eight.\u201D",
+        "\u201CYour brain is healing. Give it time.\u201D",
+    };
+
+    private void bindDashboard() {
+        heroRing = findViewById(R.id.heroRing);
+        heroTitle = findViewById(R.id.heroTitle);
+        heroSubtitle = findViewById(R.id.heroSubtitle);
+        lockPill = findViewById(R.id.lockPill);
+        streakValue = findViewById(R.id.streakValue);
+        domainsValue = findViewById(R.id.domainsValue);
+        safeSearchValue = findViewById(R.id.safeSearchValue);
+        quoteText = findViewById(R.id.quoteText);
+        stepPassword = findViewById(R.id.stepPassword);
+        stepFilter = findViewById(R.id.stepFilter);
+        stepLock = findViewById(R.id.stepLock);
+        advancedToggle = findViewById(R.id.advancedToggle);
+        advancedContainer = findViewById(R.id.advancedContainer);
+
+        quoteText.setText(QUOTES[new java.util.Random().nextInt(QUOTES.length)]);
+        quoteText.setOnClickListener(v ->
+            quoteText.setText(QUOTES[new java.util.Random().nextInt(QUOTES.length)]));
+
+        findViewById(R.id.urgeButton).setOnClickListener(v -> showUrgeHelp());
+        stepPassword.setOnClickListener(v -> {
+            passwordInput.requestFocus();
+            android.view.inputmethod.InputMethodManager imm =
+                (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) imm.showSoftInput(passwordInput, 0);
+        });
+        stepFilter.setOnClickListener(v -> {
+            if (hasRoot) blockHosts(); else if (!PBlockVpnService.isRunning()) toggleVpn();
+        });
+        stepLock.setOnClickListener(v -> showLockModeGuide());
+        lockPill.setOnClickListener(v -> showLockModeGuide());
+        advancedToggle.setOnClickListener(v -> {
+            boolean show = advancedContainer.getVisibility() != View.VISIBLE;
+            advancedContainer.setVisibility(show ? View.VISIBLE : View.GONE);
+            advancedToggle.setText(show ? R.string.advanced_hide : R.string.advanced_show);
+        });
+    }
+
+    private void updateDashboard(boolean active, boolean locked, int domainCount) {
+        if (heroRing == null) return;
+        boolean hasPassword = loadPasswordHash() != null;
+
+        android.content.SharedPreferences prefs =
+            getSharedPreferences(BootReceiver.PREFS, MODE_PRIVATE);
+        long since = prefs.getLong(KEY_PROTECTED_SINCE, 0);
+        // The streak only resets on a deliberate turn-off (resetStreak), never just because
+        // the VPN hasn't started yet (e.g. right after boot).
+        if (active && since == 0) {
+            since = System.currentTimeMillis();
+            prefs.edit().putLong(KEY_PROTECTED_SINCE, since).apply();
+        }
+        long days = since == 0 ? 0 : (System.currentTimeMillis() - since) / 86_400_000L;
+
+        heroRing.setBackgroundResource(locked && active ? R.drawable.bg_hero_locked
+            : active ? R.drawable.bg_hero_on : R.drawable.bg_hero_off);
+        heroTitle.setText(active ? R.string.hero_on_title : R.string.hero_off_title);
+        heroSubtitle.setText(locked && active ? R.string.hero_locked_sub
+            : active ? R.string.hero_on_sub
+            : hasPassword ? R.string.hero_off_sub : R.string.hero_need_password);
+
+        lockPill.setText(locked ? R.string.pill_locked : R.string.pill_unlocked);
+        lockPill.setTextColor(ContextCompat.getColor(this, locked ? R.color.accent : R.color.textSub));
+
+        streakValue.setText(String.valueOf(days));
+        domainsValue.setText(String.valueOf(domainCount));
+        safeSearchValue.setText(active ? R.string.stat_on : R.string.stat_off);
+        safeSearchValue.setTextColor(ContextCompat.getColor(this,
+            active ? R.color.success : R.color.textSub));
+
+        setStep(stepPassword, hasPassword);
+        setStep(stepFilter, active);
+        setStep(stepLock, locked);
+    }
+
+    private void resetStreak() {
+        getSharedPreferences(BootReceiver.PREFS, MODE_PRIVATE)
+            .edit().remove(KEY_PROTECTED_SINCE).apply();
+    }
+
+    private void setStep(TextView step, boolean done) {
+        step.setCompoundDrawablesRelativeWithIntrinsicBounds(
+            done ? R.drawable.ic_step_done : R.drawable.ic_step_todo, 0, 0, 0);
+        step.setAlpha(done ? 0.6f : 1f);
+    }
+
+    /** A 60-second guided breathing exercise plus quick tips, to ride out an urge. */
+    private void showUrgeHelp() {
+        final TextView phase = new TextView(this);
+        phase.setTextSize(28);
+        phase.setGravity(android.view.Gravity.CENTER);
+        phase.setTextColor(ContextCompat.getColor(this, R.color.accent));
+        phase.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+
+        final TextView timer = new TextView(this);
+        timer.setTextSize(14);
+        timer.setGravity(android.view.Gravity.CENTER);
+        timer.setTextColor(ContextCompat.getColor(this, R.color.textSub));
+
+        TextView tips = new TextView(this);
+        tips.setTextSize(14);
+        tips.setLineSpacing(0, 1.3f);
+        tips.setTextColor(ContextCompat.getColor(this, R.color.textMain));
+        tips.setText("This feeling peaks and fades in a few minutes.\n\n"
+            + "\u2022 Stand up and leave the room\n"
+            + "\u2022 Drink a glass of cold water\n"
+            + "\u2022 Do 20 push-ups or go for a walk\n"
+            + "\u2022 Text or call a friend\n"
+            + "\u2022 Put the phone down for 10 minutes");
+
+        android.widget.LinearLayout box = new android.widget.LinearLayout(this);
+        box.setOrientation(android.widget.LinearLayout.VERTICAL);
+        int pad = (int) (24 * getResources().getDisplayMetrics().density);
+        box.setPadding(pad, pad, pad, pad / 2);
+        box.setBackgroundColor(ContextCompat.getColor(this, R.color.cardBg));
+        box.addView(phase);
+        box.addView(timer);
+        android.widget.Space gap = new android.widget.Space(this);
+        gap.setMinimumHeight(pad);
+        box.addView(gap);
+        box.addView(tips);
+
+        final android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+            .setView(box)
+            .setPositiveButton("I'm OK now", null)
+            .create();
+
+        final int[] remaining = {60};
+        final Runnable tick = new Runnable() {
+            @Override
+            public void run() {
+                if (!dialog.isShowing()) return;
+                int elapsed = 60 - remaining[0];
+                int cycle = elapsed % 12;              // 4s in, 4s hold, 4s out
+                phase.setText(cycle < 4 ? "Breathe in" : cycle < 8 ? "Hold" : "Breathe out");
+                timer.setText(remaining[0] > 0
+                    ? remaining[0] + "s - follow the words slowly"
+                    : "Well done. You rode the wave. \uD83D\uDCAA");
+                if (remaining[0]-- > 0) mainHandler.postDelayed(this, 1000);
+                else phase.setText("You did it");
+            }
+        };
+        dialog.setOnShowListener(d -> mainHandler.post(tick));
+        dialog.setOnDismissListener(d -> mainHandler.removeCallbacks(tick));
+        dialog.show();
+    }
+
+    /** Explains lock mode and copies the one adb command needed to enable it. */
+    private void showLockModeGuide() {
+        if (isLocked()) {
+            refuseIfLocked();
+            return;
+        }
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Lock mode: make it permanent")
+            .setMessage("Lock mode makes PBLOCK impossible to uninstall or switch off. "
+                + "Only a factory reset removes it.\n\n"
+                + "1. Turn on protection here first.\n"
+                + "2. Settings > Accounts: remove ALL accounts for now (Google, Samsung...). "
+                + "Also remove Secure Folder / Second space / work profile.\n"
+                + "3. Turn on Developer options > USB debugging.\n"
+                + "4. Connect to a computer with adb and run:\n\n"
+                + LockdownManager.ADB_COMMAND + "\n\n"
+                + "5. Add your accounts back, turn off USB debugging.\n\n"
+                + "Back up your photos first: a factory reset erases the phone.")
+            .setPositiveButton("Copy command", (d, w) -> {
+                android.content.ClipboardManager cm =
+                    (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                if (cm != null) {
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText(
+                        "adb", LockdownManager.ADB_COMMAND));
+                    Toast.makeText(this, "Command copied", Toast.LENGTH_SHORT).show();
+                }
+            })
+            .setNegativeButton("Close", null)
+            .show();
     }
 
     @Override
