@@ -236,6 +236,12 @@
                 android:text="@string/step_filter" />
 
             <TextView
+                android:id="@+id/stepShield"
+                style="@style/PB.Step"
+                android:drawableStart="@drawable/ic_step_todo"
+                android:text="@string/step_shield" />
+
+            <TextView
                 android:id="@+id/stepLock"
                 style="@style/PB.Step"
                 android:drawableStart="@drawable/ic_step_todo"

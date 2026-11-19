@@ -19,6 +19,9 @@
     </style>
 
     <!-- Reusable text/button styles for the dashboard -->
+    <!-- Root of the PB.* styles: dotted names inherit from this implicitly -->
+    <style name="PB" />
+
     <style name="PB.SectionTitle">
         <item name="android:textColor">@color/textSub</item>
         <item name="android:textSize">12sp</item>

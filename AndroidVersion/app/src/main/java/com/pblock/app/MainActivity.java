@@ -58,6 +58,8 @@ public class MainActivity extends AppCompatActivity {
         safeSearchValue, quoteText, stepPassword, stepFilter, stepLock, advancedToggle;
     private View advancedContainer;
     private static final String KEY_PROTECTED_SINCE = "protected_since";
+    static final String EXTRA_OPEN_URGE = "open_urge";
+    private TextView stepShield;
 
     private DevicePolicyManager devicePolicyManager;
     private ComponentName adminComponent;
@@ -104,6 +106,9 @@ public class MainActivity extends AppCompatActivity {
         });
 
         bindDashboard();
+        if (getIntent() != null && getIntent().getBooleanExtra(EXTRA_OPEN_URGE, false)) {
+            mainHandler.postDelayed(this::showUrgeHelp, 300);
+        }
 
         LockdownManager.applyIfDeviceOwner(this);
 
@@ -133,6 +138,14 @@ public class MainActivity extends AppCompatActivity {
                 }
             });
         });
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        if (intent != null && intent.getBooleanExtra(EXTRA_OPEN_URGE, false)) {
+            showUrgeHelp();
+        }
     }
 
     @Override
@@ -989,6 +1002,8 @@ public class MainActivity extends AppCompatActivity {
         stepPassword = findViewById(R.id.stepPassword);
         stepFilter = findViewById(R.id.stepFilter);
         stepLock = findViewById(R.id.stepLock);
+        stepShield = findViewById(R.id.stepShield);
+        stepShield.setOnClickListener(v -> showSearchShieldSetup());
         advancedToggle = findViewById(R.id.advancedToggle);
         advancedContainer = findViewById(R.id.advancedContainer);
 
@@ -1048,7 +1063,36 @@ public class MainActivity extends AppCompatActivity {
 
         setStep(stepPassword, hasPassword);
         setStep(stepFilter, active);
+        setStep(stepShield, SearchShieldService.isEnabled(this));
         setStep(stepLock, locked);
+    }
+
+    private void showSearchShieldSetup() {
+        if (SearchShieldService.isEnabled(this)) {
+            Toast.makeText(this, "Search Shield is on", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String restricted = Build.VERSION.SDK_INT >= 33
+            ? "\n\nIf the switch is greyed out (\"Restricted setting\"): open "
+                + "Settings > Apps > PBLOCK > \u22EE (top right) > Allow restricted settings, "
+                + "then come back and try again."
+            : "";
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Search Shield")
+            .setMessage("When you search for adult content in Chrome, Google or any browser, "
+                + "Search Shield closes it and shows: \"This is not good for you\".\n\n"
+                + "On the next screen tap \"PBLOCK Search Shield\" (it may be under "
+                + "\"Installed apps\" or \"Downloaded apps\") and switch it ON."
+                + restricted)
+            .setPositiveButton("Open settings", (d, w) -> {
+                try {
+                    startActivity(new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS));
+                } catch (Exception e) {
+                    Toast.makeText(this, "Open Settings > Accessibility", Toast.LENGTH_LONG).show();
+                }
+            })
+            .setNegativeButton("Later", null)
+            .show();
     }
 
     private void resetStreak() {

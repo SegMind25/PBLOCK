@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only browsers and search apps send events to Search Shield (keeps battery use low). -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/shield_description"
+    android:accessibilityEventTypes="typeViewTextChanged|typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagReportViewIds"
+    android:canRetrieveWindowContent="true"
+    android:notificationTimeout="300"
+    android:packageNames="com.android.chrome,com.chrome.beta,com.chrome.dev,com.google.android.googlequicksearchbox,com.google.android.apps.searchlite,com.sec.android.app.sbrowser,org.mozilla.firefox,org.mozilla.firefox_beta,org.mozilla.focus,com.microsoft.emmx,com.opera.browser,com.opera.mini.native,com.opera.gx,com.brave.browser,com.duckduckgo.mobile.android,com.mi.globalbrowser,com.android.browser,com.UCMobile.intl,com.uc.browser.en,com.vivaldi.browser,com.kiwibrowser.browser,com.yandex.browser,com.huawei.browser,com.heytap.browser,com.android.vending,com.google.android.youtube" />
