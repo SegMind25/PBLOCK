@@ -41,6 +41,7 @@
     <string name="section_setup">SETUP</string>
     <string name="step_password">Set a password</string>
     <string name="step_filter">Turn on protection</string>
+    <string name="step_boot">Keep it on after restart</string>
     <string name="step_shield">Turn on Search Shield</string>
     <string name="shield_label">PBLOCK Search Shield</string>
     <string name="shield_description">Stops adult searches. When you type or search an adult term in a browser or the Google app, PBLOCK closes the page and reminds you why you started. Nothing you type is stored or sent anywhere.</string>

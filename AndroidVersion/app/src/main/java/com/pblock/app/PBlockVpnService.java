@@ -43,6 +43,12 @@ public class PBlockVpnService extends VpnService {
     private static final int QTYPE_A = 1;
 
     private static final AtomicBoolean running = new AtomicBoolean(false);
+    private static volatile boolean alwaysOn;
+
+    /** True when Android's own "Always-on VPN" is set to PBLOCK (system restarts it at boot). */
+    public static boolean isAlwaysOnVpn() {
+        return alwaysOn;
+    }
 
     private Thread workerThread;
     private ParcelFileDescriptor tunInterface;
@@ -132,6 +138,12 @@ public class PBlockVpnService extends VpnService {
             }
 
             running.set(true);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                alwaysOn = isAlwaysOn();
+            }
+            // Started by the system (Always-on VPN) or by us: either way, remember it is on.
+            getSharedPreferences(BootReceiver.PREFS, MODE_PRIVATE)
+                .edit().putBoolean(BootReceiver.KEY_ENABLED, true).apply();
             upstreamPool = Executors.newFixedThreadPool(UPSTREAM_THREADS);
 
             workerThread = new Thread(this::runLoop, "PBlockVpnWorker");

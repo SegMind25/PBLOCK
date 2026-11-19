@@ -59,7 +59,7 @@ public class MainActivity extends AppCompatActivity {
     private View advancedContainer;
     private static final String KEY_PROTECTED_SINCE = "protected_since";
     static final String EXTRA_OPEN_URGE = "open_urge";
-    private TextView stepShield;
+    private TextView stepShield, stepBoot;
 
     private DevicePolicyManager devicePolicyManager;
     private ComponentName adminComponent;
@@ -161,11 +161,25 @@ public class MainActivity extends AppCompatActivity {
         return LockdownManager.isLocked(this);
     }
 
-    /** In lock mode the filter must always run; start it if Android hasn't yet. */
+    private boolean vpnConsentAsked;
+
+    /**
+     * Self-heal: if protection was on (or lock mode is on) but isn't running, e.g. the
+     * phone blocked PBLOCK from starting at boot, start it again right away.
+     */
     private void ensureLockedVpnRunning() {
-        if (isLocked() && !PBlockVpnService.isRunning() && VpnService.prepare(this) == null) {
+        if (hasRoot || PBlockVpnService.isRunning() || isCountingDown.get()) return;
+        boolean wanted = isLocked() || getSharedPreferences(BootReceiver.PREFS, MODE_PRIVATE)
+            .getBoolean(BootReceiver.KEY_ENABLED, false);
+        if (!wanted) return;
+        Intent prepare = VpnService.prepare(this);
+        if (prepare == null) {
             setVpnUserEnabled(true);
             ContextCompat.startForegroundService(this, new Intent(this, PBlockVpnService.class));
+            mainHandler.postDelayed(() -> { updateVpnButton(); showStatusAsync(); }, 1500);
+        } else if (!vpnConsentAsked) {
+            vpnConsentAsked = true; // VPN permission was lost: ask once per app launch
+            startActivityForResult(prepare, REQUEST_CODE_VPN);
         }
     }
 
@@ -565,6 +579,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private boolean isAlwaysOnVpnEnabled() {
+        if (PBlockVpnService.isAlwaysOnVpn()) return true;
         try {
             String pkg = android.provider.Settings.Secure.getString(
                 getContentResolver(), "always_on_vpn_app");
@@ -1004,6 +1019,8 @@ public class MainActivity extends AppCompatActivity {
         stepLock = findViewById(R.id.stepLock);
         stepShield = findViewById(R.id.stepShield);
         stepShield.setOnClickListener(v -> showSearchShieldSetup());
+        stepBoot = findViewById(R.id.stepBoot);
+        stepBoot.setOnClickListener(v -> showRestartSetup());
         advancedToggle = findViewById(R.id.advancedToggle);
         advancedContainer = findViewById(R.id.advancedContainer);
 
@@ -1064,7 +1081,60 @@ public class MainActivity extends AppCompatActivity {
         setStep(stepPassword, hasPassword);
         setStep(stepFilter, active);
         setStep(stepShield, SearchShieldService.isEnabled(this));
+        setStep(stepBoot, locked || isAlwaysOnVpnEnabled());
         setStep(stepLock, locked);
+    }
+
+    /** Makes protection survive reboots, even on phones that block apps at startup. */
+    private void showRestartSetup() {
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Keep protection on after restart")
+            .setMessage("Some phones (Xiaomi, Samsung, Oppo, Vivo, Huawei...) stop apps from "
+                + "starting after a reboot. Android's \"Always-on VPN\" fixes this: the "
+                + "system itself starts PBLOCK every time the phone boots.\n\n"
+                + "1. Tap \"Open VPN settings\".\n"
+                + "2. Tap the \u2699 gear next to PBLOCK.\n"
+                + "3. Turn ON \"Always-on VPN\".\n"
+                + "   (Leave \"Block connections without VPN\" off.)\n\n"
+                + "Also tap \"Autostart\" and allow PBLOCK to start automatically / "
+                + "run in background, if your phone has that setting.")
+            .setPositiveButton("Open VPN settings", (d, w) -> openFirst(
+                new Intent("android.net.vpn.SETTINGS"),
+                new Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS)))
+            .setNeutralButton("Autostart", (d, w) -> openAutostartSettings())
+            .setNegativeButton("Later", null)
+            .show();
+    }
+
+    private void openAutostartSettings() {
+        String[][] oem = {
+            {"com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"},
+            {"com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity"},
+            {"com.oplus.safecenter", "com.oplus.safecenter.permission.startup.StartupAppListActivity"},
+            {"com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"},
+            {"com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"},
+            {"com.samsung.android.lool", "com.samsung.android.sm.ui.battery.BatteryActivity"},
+            {"com.asus.mobilemanager", "com.asus.mobilemanager.autostart.AutoStartActivity"},
+        };
+        Intent[] intents = new Intent[oem.length + 1];
+        for (int i = 0; i < oem.length; i++) {
+            intents[i] = new Intent().setComponent(new ComponentName(oem[i][0], oem[i][1]));
+        }
+        intents[oem.length] = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:" + getPackageName()));
+        openFirst(intents);
+    }
+
+    private void openFirst(Intent... intents) {
+        for (Intent i : intents) {
+            try {
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+                return;
+            } catch (Exception ignored) {
+            }
+        }
+        Toast.makeText(this, "Open your phone's Settings app", Toast.LENGTH_LONG).show();
     }
 
     private void showSearchShieldSetup() {
