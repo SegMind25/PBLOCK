@@ -18,7 +18,7 @@ public class PBlockService extends Service {
     private static final String TAG = "PBLOCK";
     private static final String CHANNEL_ID = "pblock_service";
     private static final int NOTIFICATION_ID = 1;
-    private static final long PROTECTION_CHECK_INTERVAL_MS = 60000;
+    private static final long PROTECTION_CHECK_INTERVAL_MS = 5 * 60 * 1000; // root hosts re-check
 
     private Handler protectionHandler;
     private Runnable protectionRunnable;

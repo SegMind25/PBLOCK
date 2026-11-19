@@ -96,15 +96,15 @@ public class MainActivity extends AppCompatActivity {
             return true;
         });
 
+        LockdownManager.applyIfDeviceOwner(this);
+
         updateDeviceAdminUI();
 
         requestNeededPermissions();
 
         autoPromptDeviceAdmin();
 
-        if (isDeviceAdminActive()) {
-            startForegroundServiceSafe();
-        }
+        ensureLockedVpnRunning();
 
         executor.execute(() -> {
             hasRoot = checkRootAccess();
@@ -131,9 +131,31 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         updateVpnButton();
         autoPromptDeviceAdmin();
-        if (isDeviceAdminActive()) {
-            startForegroundServiceSafe();
+        ensureLockedVpnRunning();
+    }
+
+    private boolean isLocked() {
+        return LockdownManager.isLocked(this);
+    }
+
+    /** In lock mode the filter must always run; start it if Android hasn't yet. */
+    private void ensureLockedVpnRunning() {
+        if (isLocked() && !PBlockVpnService.isRunning() && VpnService.prepare(this) == null) {
+            setVpnUserEnabled(true);
+            ContextCompat.startForegroundService(this, new Intent(this, PBlockVpnService.class));
         }
+    }
+
+    private boolean refuseIfLocked() {
+        if (!isLocked()) return false;
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Lock mode is ON")
+            .setMessage("PBLOCK is locked to this phone. Blocking cannot be turned off and "
+                + "the app cannot be uninstalled.\n\nThe only way to remove it is a "
+                + "factory reset. You've got this.")
+            .setPositiveButton("OK", null)
+            .show();
+        return true;
     }
 
     private void toggleVpn() {
@@ -143,6 +165,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (PBlockVpnService.isRunning()) {
+            if (refuseIfLocked()) return;
             if (loadPasswordHash() == null) {
                 Intent stopIntent = new Intent(this, PBlockVpnService.class);
                 stopIntent.setAction(PBlockVpnService.ACTION_STOP);
@@ -345,6 +368,7 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, "Already counting down...", Toast.LENGTH_SHORT).show();
             return;
         }
+        if (refuseIfLocked()) return;
         startFullUnlockChallenge();
     }
 
@@ -389,6 +413,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void disableAllProtection() {
+        if (refuseIfLocked()) return;
         isCountingDown.set(true);
         setButtonsEnabled(false);
         statusText.setText("DISABLE IN 30s...\nThis will turn off ALL protection.");
@@ -477,6 +502,7 @@ public class MainActivity extends AppCompatActivity {
         if (!PBlockVpnService.isRunning() || isCountingDown.get()) {
             return;
         }
+        if (refuseIfLocked()) return;
         startFullUnlockChallenge();
     }
 
@@ -537,6 +563,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void toggleDeviceAdmin() {
+        if (refuseIfLocked()) return;
         if (isDeviceAdminActive()) {
             startDeactivationChallenges();
         } else {
@@ -623,7 +650,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void autoPromptDeviceAdmin() {
         updateDeviceAdminUI();
-        if (isDeviceAdminActive() || adminPromptedThisSession) {
+        if (isDeviceAdminActive() || adminPromptedThisSession || isLocked()) {
             return;
         }
         adminPromptedThisSession = true;
@@ -661,7 +688,6 @@ public class MainActivity extends AppCompatActivity {
         if (requestCode == REQUEST_CODE_ENABLE_ADMIN) {
             updateDeviceAdminUI();
             if (isDeviceAdminActive()) {
-                startForegroundServiceSafe();
                 Toast.makeText(this, "Device Admin activated successfully!",
                     Toast.LENGTH_SHORT).show();
             }
@@ -856,29 +882,7 @@ public class MainActivity extends AppCompatActivity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_CODE_PERMISSIONS) {
-            if (isDeviceAdminActive()) {
-                startForegroundServiceSafe();
-            }
-        }
-    }
-
-    private void startForegroundServiceSafe() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                    != PackageManager.PERMISSION_GRANTED) {
-                requestNeededPermissions();
-                return;
-            }
-        }
-        try {
-            Intent serviceIntent = new Intent(this, PBlockService.class);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(serviceIntent);
-            } else {
-                startService(serviceIntent);
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to start foreground service: " + e.getMessage());
+            ensureLockedVpnRunning();
         }
     }
 
@@ -900,9 +904,13 @@ public class MainActivity extends AppCompatActivity {
             final boolean serviceRunning = isServiceRunning(PBlockService.class);
             final BootHostsManager hostsManager = new BootHostsManager(this);
             final boolean bootPersistence = hostsManager.wasRootBlockingActive();
+            final boolean locked = isLocked();
 
             mainHandler.post(() -> {
                 StringBuilder s = new StringBuilder("=== PBLOCK STATUS ===\n\n");
+                s.append("LOCK MODE: ").append(locked
+                    ? "ON - permanent until factory reset\n\n"
+                    : "OFF - see docs/LOCK_MODE.md to make blocking permanent\n\n");
                 if (hasRoot) {
                     s.append("ROOT BLOCKING: ").append(hostsBlocked ? "ACTIVE" : "INACTIVE")
                         .append("\n");

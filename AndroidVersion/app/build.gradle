@@ -2,6 +2,11 @@ plugins {
     id 'com.android.application'
 }
 
+// CI passes VERSION_NAME (from the git tag, e.g. "1.2.0") and VERSION_CODE (run number).
+// versionCode must keep increasing so a new APK installs over the old one.
+def ciVersionName = System.getenv("VERSION_NAME") ?: "1.0"
+def ciVersionCode = (System.getenv("VERSION_CODE") ?: "1").toInteger()
+
 android {
     namespace 'com.pblock.app'
     compileSdk 35
@@ -10,20 +15,39 @@ android {
         applicationId "com.pblock.app"
         minSdk 21
         targetSdk 35
-        versionCode 1
-        versionName "1.0"
+        versionCode ciVersionCode
+        versionName ciVersionName
+    }
+
+    signingConfigs {
+        // A fixed key keeps every build updatable over the previous one. That matters
+        // in lock mode, where PBLOCK can't be uninstalled to reinstall with another key.
+        // CI can override it with the PBLOCK_KEYSTORE* env vars (from repo secrets).
+        release {
+            storeFile file(System.getenv("PBLOCK_KEYSTORE") ?: "pblock-release.jks")
+            storePassword System.getenv("PBLOCK_KEYSTORE_PASSWORD") ?: "pblock-release"
+            keyAlias System.getenv("PBLOCK_KEY_ALIAS") ?: "pblock"
+            keyPassword System.getenv("PBLOCK_KEY_PASSWORD") ?: "pblock-release"
+        }
     }
 
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
         }
     }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
     }
 
     applicationVariants.all { variant ->

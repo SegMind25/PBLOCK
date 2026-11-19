@@ -39,12 +39,7 @@ public class PBlockDeviceAdminReceiver extends DeviceAdminReceiver {
             Log.w(TAG, "setUninstallBlocked failed: " + e.getMessage());
         }
 
-        try {
-            Intent serviceIntent = new Intent(context, PBlockService.class);
-            androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent);
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to start PBlockService: " + e.getMessage());
-        }
+        LockdownManager.applyIfDeviceOwner(context);
 
         Toast.makeText(context, "PBLOCK: Device Admin activated. "
             + "The app cannot be uninstalled while Device Admin is active. "
@@ -71,12 +66,6 @@ public class PBlockDeviceAdminReceiver extends DeviceAdminReceiver {
             // Android doesn't let a plain device admin veto this, so keep blocking
             // running and ask the user to re-activate protection.
             Log.w(TAG, "Device Admin disabled without solving puzzles; keeping protection");
-            try {
-                androidx.core.content.ContextCompat.startForegroundService(context,
-                    new Intent(context, PBlockService.class));
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to restart PBlockService: " + e.getMessage());
-            }
             Intent main = new Intent(context, MainActivity.class);
             main.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             try { context.startActivity(main); } catch (Exception ignored) {}

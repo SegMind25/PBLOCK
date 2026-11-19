@@ -27,10 +27,14 @@ public class BootReceiver extends BroadcastReceiver {
 
         Log.i(TAG, "Boot completed, re-applying protection...");
 
+        LockdownManager.applyIfDeviceOwner(context);
+
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         boolean vpnEnabledByUser = prefs.getBoolean(KEY_ENABLED, false);
 
-        if (vpnEnabledByUser && !PBlockVpnService.isRunning()) {
+        // prepare() != null means VPN consent was revoked; starting would just fail.
+        if (vpnEnabledByUser && !PBlockVpnService.isRunning()
+                && android.net.VpnService.prepare(context) == null) {
             try {
                 androidx.core.content.ContextCompat.startForegroundService(
                     context, new Intent(context, PBlockVpnService.class));
@@ -41,6 +45,10 @@ public class BootReceiver extends BroadcastReceiver {
         }
 
         BootHostsManager hostsManager = new BootHostsManager(context);
+        if (!hostsManager.wasRootBlockingActive()) {
+            // VPN mode needs no watchdog: saves battery and a second notification.
+            return;
+        }
         hostsManager.reapplyRootBlockingOnBoot();
 
         try {

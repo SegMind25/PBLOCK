@@ -22,3 +22,6 @@
 
 # Keep ConsoleActivity
 -keep class com.pblock.app.ConsoleActivity
+
+# Keep all PBLOCK classes intact (unused AndroidX code is still shrunk away)
+-keep class com.pblock.app.** { *; }

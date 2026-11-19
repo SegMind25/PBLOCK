@@ -86,7 +86,7 @@ All adult content is now blocked on every app and browser. See [`scripts/README.
 | **PBLOCK App (VPN mode)** | No | No | Local DNS-filtering VPN, SafeSearch forced, survives reboot. |
 | **PBLOCK App (root mode)** | Yes | No | Writes `/system/etc/hosts` and re-applies it on boot. |
 
-See [`docs/ANDROID_PLAN.md`](docs/ANDROID_PLAN.md) for the Android roadmap.
+**Android APK:** download it from [Releases](../../releases). To make blocking permanent until a factory reset, follow [`docs/LOCK_MODE.md`](docs/LOCK_MODE.md). Roadmap: [`docs/ANDROID_PLAN.md`](docs/ANDROID_PLAN.md).
 
 ## Technology Stack
 

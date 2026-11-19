@@ -114,17 +114,32 @@ public class PBlockHelper {
         "searx.me", "www.searx.me"
     );
 
+    // Encrypted-DNS (DoH/DoT) resolvers. Browsers' "Secure DNS" would skip the filter;
+    // when these don't resolve, browsers fall back to normal DNS, which is filtered.
+    private static final List<String> DOH_DOMAINS = Arrays.asList(
+        "dns.google", "dns.google.com", "8888.google",
+        "cloudflare-dns.com", "mozilla.cloudflare-dns.com", "chrome.cloudflare-dns.com",
+        "one.one.one.one", "1dot1dot1dot1.cloudflare-dns.com",
+        "doh.opendns.com", "dns.opendns.com",
+        "dns.quad9.net", "dns9.quad9.net", "dns10.quad9.net", "dns11.quad9.net",
+        "dns.adguard.com", "dns.adguard-dns.com", "unfiltered.adguard-dns.com",
+        "dns.nextdns.io", "doh.mullvad.net", "dns.mullvad.net",
+        "doh.dns.sb", "dns.twnic.tw", "doh.libredns.gr", "dns.alidns.com",
+        "doh.pub", "dns.controld.com", "freedns.controld.com"
+    );
+
     public static final String BLOCK_START_MARKER = "# CONTENT_BLOCKER_START";
     public static final String BLOCK_END_MARKER = "# CONTENT_BLOCKER_END";
 
     public static int getBlockedDomainCount() {
         return BLOCKED_DOMAINS.size() + GOOGLE_DOMAINS.size()
-            + BING_DOMAINS.size() + BLOCKED_SEARCH_ENGINES.size();
+            + BING_DOMAINS.size() + BLOCKED_SEARCH_ENGINES.size() + DOH_DOMAINS.size();
     }
 
     public static List<String> getBlockedDomainsForVpn() {
         List<String> all = new java.util.ArrayList<>(BLOCKED_DOMAINS);
         all.addAll(BLOCKED_SEARCH_ENGINES);
+        all.addAll(DOH_DOMAINS);
         return all;
     }
 
@@ -182,6 +197,12 @@ public class PBlockHelper {
 
         sb.append("# Block other search engines (no SafeSearch support)\n");
         for (String domain : BLOCKED_SEARCH_ENGINES) {
+            sb.append("127.0.0.1 ").append(domain).append("\n");
+            sb.append("::1 ").append(domain).append("\n");
+        }
+
+        sb.append("# Block encrypted-DNS resolvers (Secure DNS bypass)\n");
+        for (String domain : DOH_DOMAINS) {
             sb.append("127.0.0.1 ").append(domain).append("\n");
             sb.append("::1 ").append(domain).append("\n");
         }
